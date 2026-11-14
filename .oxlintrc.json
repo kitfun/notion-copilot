@@ -18,7 +18,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
-    // Everywhere in the repository, tests included. extensions/*/src/agent/ is exempted below.
+    // Everywhere in the repository, tests included. extensions/*/src/agent/ is exempted below for pi,
+    // and extensions/*/src/analytics.ts for the PostHog SDK.
     "no-restricted-imports": [
       "error",
       {
@@ -31,6 +32,10 @@
               "@earendil-works/pi-ai/**"
             ],
             "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+          },
+          {
+            "group": ["posthog-js", "posthog-js/**"],
+            "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
           }
         ]
       }
@@ -69,6 +74,10 @@
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
                 "regex": "^\\.\\./[^./]",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               },
@@ -99,6 +108,10 @@
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
                 "regex": "^\\.\\./\\.\\./[^./]",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               },
@@ -126,6 +139,10 @@
                   "@earendil-works/pi-ai/**"
                 ],
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -199,6 +216,10 @@
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
                 "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
                 "message": "An extension's site layer (src/notion/ in Notico) imports nothing from agent/, tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
@@ -227,6 +248,10 @@
           "error",
           {
             "patterns": [
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
               {
                 "regex": "^zod(/|$)",
                 "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
@@ -293,6 +318,44 @@
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The one module that imports the PostHog SDK. Its other restrictions (the extensions/*/src block) still hold.
+      "files": ["extensions/*/src/analytics.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               },
@@ -323,6 +386,10 @@
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
                 "regex": "^zod(/|$)",
                 "message": "Import zod from worker/src/zod.ts (import * as z from './zod'): it sets zod up before any schema is built."
               }
@@ -347,6 +414,10 @@
                   "@earendil-works/pi-ai/**"
                 ],
                 "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
               }
             ]
           }

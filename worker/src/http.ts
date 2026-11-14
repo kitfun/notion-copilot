@@ -54,6 +54,10 @@ export interface Env {
   CREDIT_PRICE?: string
   /** The quantities of CREDIT_PRICE on sale as packs: `[1, 5, 20, 100]` (see `offerOf` in billing.ts). */
   CREDIT_PACKS?: unknown
+  /** The PostHog project's key (public by design). Without it, or without POSTHOG_HOST, no event is sent. */
+  POSTHOG_KEY?: string
+  /** PostHog's ingestion host, e.g. `https://us.i.posthog.com`. */
+  POSTHOG_HOST?: string
 }
 
 export interface AppOptions {

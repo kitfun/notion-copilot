@@ -6,15 +6,17 @@ import { z } from '../zod'
 import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */
-export type NotionErrorCode =
-  | 'no_notion_tab'
-  | 'signed_out'
-  | 'no_access'
-  | 'in_trash'
-  | 'notion_error'
-  | 'outcome_unknown'
-  | 'rate_limited'
-  | 'over_budget'
+export const NOTION_ERROR_CODES = [
+  'no_notion_tab',
+  'signed_out',
+  'no_access',
+  'in_trash',
+  'notion_error',
+  'outcome_unknown',
+  'rate_limited',
+  'over_budget',
+] as const
+export type NotionErrorCode = (typeof NOTION_ERROR_CODES)[number]
 
 export class NotionError extends Error {
   /** The request may have reached Notion, but no answer came back (timeout, tab closed mid-request). */

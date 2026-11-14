@@ -65,6 +65,8 @@ Variables in `wrangler.jsonc`:
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
 | `CREDIT_PRICE` | The id of the Stripe price of one unit of credits: 1,000 credits for US$1, one-time. The committed value is the live account's |
 | `CREDIT_PACKS` | The packs on sale, as quantities of `CREDIT_PRICE`: `[1, 5, 20, 100]` sells US$1, 5, 20, and 100 packs. A pack's credits are its quantity × 1000. Changing the packs on sale changes only this |
+| `POSTHOG_HOST` | PostHog's ingestion host, `https://us.i.posthog.com` for the US region. See [PostHog](#posthog) |
+| `POSTHOG_KEY` | The PostHog project's key (`phc_…`), public by design; the same one as the extension's `VITE_POSTHOG_KEY`. Empty: the worker sends no purchase event |
 
 Secrets, set with `pnpm exec wrangler secret put <name>` in `worker/` (or in the dashboard: Workers & Pages → `cofun-api` → Settings → Variables and Secrets), never committed. Without them nothing can be bought: the side panel says buying credits is unavailable, and the webhook takes no event.
 
@@ -84,6 +86,12 @@ Credits are sold through Stripe's Checkout with [Managed Payments](https://docs.
 Each purchase is written to Workers Logs as `purchase: user=<user id> credits=<n> payment=<PaymentIntent id>`, and each one taken back as `purchase taken back: payment=<PaymentIntent id> reason=<refund|dispute>`.
 
 There is no test environment: the one worker is deployed on merge, with the live Stripe account. The worker's tests cover buying against a fake Stripe, with webhook events signed by a test secret. After a deploy that changes buying, the maintainer checks it once by hand: buy the US$5 pack with a real card, see the credits arrive in the side panel, refund the payment in the Stripe Dashboard, and see what was left taken back. It costs one payment's fees, so it is never part of `pnpm e2e`.
+
+### PostHog
+
+Product analytics go to one [PostHog](https://posthog.com) project, in the US region: the extensions send usage events to it themselves, and the worker sends `purchase_completed` when a payment adds credits (see [Usage data](architecture.md#usage-data)). The project's key (Settings → Project → Project API key, `phc_…`) is public by design, and is set in two places: `VITE_POSTHOG_KEY` in `extensions/notico/.env`, and `POSTHOG_KEY` in `worker/wrangler.jsonc`. While it is empty nothing is sent, and the build and the tests need no key.
+
+In the project's settings, turn on **Discard client IP data** (the privacy pages say PostHog is set not to keep the address), and leave autocapture, session replay, heatmaps, and exception capture off: the extension turns them off itself and never asks the project for its settings, so they would have no effect, but nothing should suggest otherwise. Don't use PostHog's setup wizard on this repository: it adds the SDK with its defaults, which send page views with the page's title and URL.
 
 ### Admin page
 
@@ -226,6 +234,8 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 | `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key, of the same instance as the worker's. It names the Frontend API host, which the manifest allows |
 | `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain). With a development instance's key (`pk_test_…`) Clerk syncs the session from this host; with a production instance's key (`pk_live_…`) it syncs from the Frontend API host instead |
 | `VITE_API_URL` | Worker base URL, including `/v1` |
+| `VITE_POSTHOG_HOST` | PostHog's ingestion host, where usage events go. The manifest's content security policy allows it |
+| `VITE_POSTHOG_KEY` | The PostHog project's key (`phc_…`), public by design. Empty: the extension sends no usage events. See [PostHog](#posthog) |
 | `CRX_PUBLIC_KEY` | Extension public key; pins the extension ID. The committed one is the Chrome Web Store's, so a development build has the store's ID. The [store build](#releases) leaves it out |
 | `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
 

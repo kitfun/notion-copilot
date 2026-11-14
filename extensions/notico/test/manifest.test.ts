@@ -49,16 +49,21 @@ describe('extension manifest', () => {
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.content_security_policy.extension_pages).toBe(
       "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' https://api.cofun.cc https://clerk.cofun.cc https://openrouter.ai https://api.deepseek.com; " +
+        "connect-src 'self' https://api.cofun.cc https://clerk.cofun.cc https://openrouter.ai https://api.deepseek.com " +
+        'https://us.i.posthog.com; ' +
         "img-src 'self' data: blob: https://img.clerk.com",
     )
   })
 
-  it('allows requests only to the configured worker, Clerk host, OpenRouter, and DeepSeek, whatever the env', () => {
+  it('allows requests only to the configured worker, Clerk host, OpenRouter, DeepSeek, and PostHog host, whatever the env', () => {
     const csp = (env: Partial<ManifestEnv>) =>
       manifest({ VITE_CLERK_SYNC_HOST: 'https://app.example.com', ...env }).content_security_policy.extension_pages
     expect(csp({ VITE_API_URL: 'http://localhost:8787/v1' })).toContain(
       `connect-src 'self' http://localhost:8787 https://${CLERK_HOST} https://openrouter.ai https://api.deepseek.com;`,
+    )
+    // PostHog's host, for usage events, is the one the build is configured with: the origin alone.
+    expect(csp({ VITE_API_URL: 'http://localhost:8787/v1', VITE_POSTHOG_HOST: 'https://eu.i.posthog.com/' })).toContain(
+      `connect-src 'self' http://localhost:8787 https://${CLERK_HOST} https://openrouter.ai https://api.deepseek.com https://eu.i.posthog.com;`,
     )
     // Without a worker URL or a Clerk host, requests go only to OpenRouter and DeepSeek, for a user's own model.
     expect(csp({ VITE_CLERK_PUBLISHABLE_KEY: '' })).toContain(

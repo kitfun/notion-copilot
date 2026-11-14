@@ -124,6 +124,8 @@ function admitsNull(schema: unknown): boolean {
 export interface Reporter {
   stop(reason: string): void
   changed(): void
+  /** The tool failed with an error that has a code (a Notion error's, such as `no_access`). */
+  failed(code: string): void
 }
 
 /**
@@ -164,6 +166,8 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
         if (reason) report.stop(reason)
         // An error that says data may have changed counts on its own, flag or not.
         if (causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
+        const code = causes(err).find((e) => typeof e.code === 'string')?.code
+        if (typeof code === 'string') report.failed(code)
         throw err
       }
       if (spec.changesData) report.changed()

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { loadAnalyticsEnabled, saveAnalyticsEnabled, track } from '../analytics'
 import {
   creditsText,
   dayText,
@@ -28,8 +29,8 @@ export interface Buying {
 
 /**
  * The settings page: the account, the model providers and their models, the packs of credits to buy, the
- * credits with their dates, and usage per day. The history of the credits opens from the
- * credits, in place of the page, and leads back to it.
+ * credits with their dates, usage per day, and whether usage data is sent. The history of the
+ * credits opens from the credits, in place of the page, and leads back to it.
  */
 export function Settings({
   credits,
@@ -136,7 +137,15 @@ export function Settings({
         )}
         {credits.status === 'ready' && <Balance credits={credits.credits} />}
         {/* Read only when it is opened, so it is there to open whether or not the credits could be read. */}
-        <button ref={historyRef} type="button" className="link" onClick={() => setHistoryOpen(true)}>
+        <button
+          ref={historyRef}
+          type="button"
+          className="link"
+          onClick={() => {
+            track({ event: 'credits_history_opened' })
+            setHistoryOpen(true)
+          }}
+        >
           Credit history
         </button>
       </section>
@@ -149,6 +158,53 @@ export function Settings({
           <Usage usage={credits.credits.usage} />
         </section>
       )}
+
+      <UsageData />
+    </section>
+  )
+}
+
+/**
+ * Whether usage data is sent (see analytics.ts): on until the user turns it off, for this device.
+ * Turned off, nothing more is sent, from this panel at once.
+ */
+function UsageData() {
+  // Not known until storage was read: the switch shows nothing it might have to take back.
+  const [enabled, setEnabled] = useState<boolean>()
+
+  useEffect(() => {
+    let closed = false
+    loadAnalyticsEnabled().then(
+      (stored) => !closed && setEnabled(stored),
+      (err: unknown) => console.error('Could not read the usage data setting', err),
+    )
+    return () => void (closed = true)
+  }, [])
+
+  function change(next: boolean) {
+    setEnabled(next)
+    saveAnalyticsEnabled(next).catch((err: unknown) => console.error('Could not save the usage data setting', err))
+  }
+
+  return (
+    <section className="card" aria-labelledby="settings-privacy">
+      <h3 id="settings-privacy">Privacy</h3>
+      <label className="switch">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={enabled ?? false}
+          disabled={enabled === undefined}
+          aria-describedby="settings-privacy-detail"
+          onChange={(e) => change(e.target.checked)}
+        />
+        <span className="switch-track" aria-hidden="true" />
+        Share usage data
+      </label>
+      <p id="settings-privacy-detail" className="account-detail">
+        Which features you use and whether they worked, to help improve Notico. Never your messages, the replies, or
+        anything from your pages.
+      </p>
     </section>
   )
 }

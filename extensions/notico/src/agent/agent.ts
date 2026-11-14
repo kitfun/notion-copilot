@@ -99,6 +99,10 @@ export class CopilotAgent {
   private stopReason?: string
   /** Set by a tool that changes data and changed something, or may have (see `changesData`). */
   private changed = false
+  /** Set by a tool that failed with an error that has a code, until its call is reported as ended. */
+  private failedWith?: string
+  /** The model calls the latest question took; see `rounds`. */
+  private steps = 0
   /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
   private onChunk?: (chunk: unknown) => void
 
@@ -195,6 +199,8 @@ export class CopilotAgent {
     const before = agent.state.messages.length
     this.stopReason = undefined
     this.changed = false
+    this.failedWith = undefined
+    this.steps = 0
     let steps = 0
     let hitLimit = false
     let failure: Failure | undefined
@@ -302,9 +308,12 @@ export class CopilotAgent {
       return { action: 'end' }
     }
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
-      if (event.type === 'turn_start') steps++
+      if (event.type === 'turn_start') this.steps = ++steps
       const update = toUpdate(event)
       if (update?.type === 'tool_end') {
+        // Tools run one at a time, so a code reported since the last call ended is this call's.
+        if (update.status === 'failed' && this.failedWith) update.code = this.failedWith
+        this.failedWith = undefined
         if (refused.has(update.id)) update.status = 'skipped'
         else if (declined.has(update.id)) update.status = 'declined'
         // A tool cut short by Stop reports an error; it did not fail on its own. A tool that
@@ -375,6 +384,11 @@ export class CopilotAgent {
     }
     const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
     return { result: { ...result, ...counted }, kept: true }
+  }
+
+  /** How many times the model was called for the latest question, once `ask` resolved: 0 when it never got that far. */
+  rounds(): number {
+    return this.steps
   }
 
   /** Stops the current model call and any running tool. */
@@ -511,6 +525,9 @@ export class CopilotAgent {
       },
       changed: () => {
         if (epoch === this.epoch) this.changed = true
+      },
+      failed: (code) => {
+        if (epoch === this.epoch) this.failedWith = code
       },
     }
   }

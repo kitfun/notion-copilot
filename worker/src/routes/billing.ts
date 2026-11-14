@@ -2,6 +2,7 @@
 // back to, and Stripe's webhook, which grants what was paid for. What each event does is in billing.ts.
 import { Hono } from 'hono'
 import * as z from '../zod'
+import { reportPurchase } from '../analytics'
 import { billingPage } from '../billing-page'
 import { CREDITS_PER_UNIT, handleEvent, offerOf, type Offer } from '../billing'
 import { stripeOverHttp, verifiedEvent, type StripeApi } from '../stripe'
@@ -50,6 +51,12 @@ export function stripeRoutes({ now, logError, logBilling }: Deps): App {
       throw new HttpError(500, 'internal', 'the event could not be handled')
     }
     if (handled.log) logBilling(handled.log)
+    // Once per payment: only the event that added the credits reports the purchase, and only when
+    // PostHog is set up (it is not in the tests, which send nothing).
+    const { POSTHOG_KEY, POSTHOG_HOST } = c.env
+    if (handled.purchase && POSTHOG_KEY && POSTHOG_HOST) {
+      await reportPurchase(POSTHOG_KEY, POSTHOG_HOST, handled.purchase, logError)
+    }
     return c.json({ received: true, done: handled.done })
   })
 

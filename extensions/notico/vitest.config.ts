@@ -6,6 +6,8 @@ const env = {
   VITE_API_URL: 'https://api.copilot.test/v1/',
   VITE_CLERK_PUBLISHABLE_KEY: 'pk_test_fake',
   VITE_CLERK_SYNC_HOST: 'https://copilot.test',
+  VITE_POSTHOG_HOST: 'https://posthog.test',
+  VITE_POSTHOG_KEY: 'phc_test_project_key',
 }
 
 // The tests run without the build config (vite.config.ts), which needs the build's env.

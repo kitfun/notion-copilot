@@ -75,6 +75,8 @@ const Granting = z.object({
 export interface Handled {
   done: 'granted' | 'granted already' | 'taken back' | 'taken back already' | 'recorded' | 'ignored'
   log?: string
+  /** Set when this event added a purchase's credits, and only then: who bought, and the pack's quantity. */
+  purchase?: { userId: string; pack: number }
 }
 
 /**
@@ -142,7 +144,11 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
         }
       }
       if (added === 'granted already') return { done: added }
-      return { done: 'granted', log: `purchase: user=${userId} credits=${credits} payment=${session.payment_intent}` }
+      return {
+        done: 'granted',
+        log: `purchase: user=${userId} credits=${credits} payment=${session.payment_intent}`,
+        purchase: { userId, pack: quantity },
+      }
     }
     // A refund, full or partial, takes back all that is left of the purchase: purchases are final,
     // and a refund is the exception (a billing error, the law, or Stripe as the seller of record).

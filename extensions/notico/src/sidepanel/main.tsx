@@ -1,6 +1,7 @@
 import { ClerkProvider, Show, useAuth } from '@clerk/chrome-extension'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
+import { identify, track } from '../analytics'
 import { clerkSyncHost } from '../clerk'
 import { Chat } from './Chat'
 import { Header } from './Header'
@@ -55,6 +56,7 @@ uatCookieName()
   .catch(console.error)
 
 function openSignIn() {
+  track({ event: 'sign_in_opened' })
   chrome.tabs.create({ url: `${SIGN_IN_HOST}/login` })
 }
 
@@ -68,6 +70,15 @@ function SignedInChat() {
 function WhileLoading() {
   const { isLoaded } = useAuth()
   return isLoaded ? null : <Header />
+}
+
+/** Tells analytics who is signed in, once Clerk knows: usage is counted per account, and per device before sign-in. */
+function Identity() {
+  const { isLoaded, userId } = useAuth()
+  useEffect(() => {
+    if (isLoaded) identify(userId ?? null)
+  }, [isLoaded, userId])
+  return null
 }
 
 function App() {
@@ -84,6 +95,7 @@ function App() {
       signUpFallbackRedirectUrl={PANEL_URL}
     >
       <WhileLoading />
+      <Identity />
 
       <Show when="signed-out">
         <Header />
@@ -103,6 +115,7 @@ function App() {
   )
 }
 
+track({ event: 'panel_opened' })
 const root = createRoot(document.getElementById('root')!)
 root.render(
   <StrictMode>

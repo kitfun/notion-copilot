@@ -1,7 +1,7 @@
 // The side panel's UI tests run the whole panel: the page sidepanel.html loads, with the real agent,
 // tools, and session store behind it, and the real worker answering its model calls. Only the edges
-// are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, the model binding, and
-// the services a user's own model is on (OpenRouter, DeepSeek).
+// are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, the model binding, the
+// services a user's own model is on (OpenRouter, DeepSeek), and PostHog, where usage events go.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
@@ -22,6 +22,7 @@ import type { FakeSession } from './clerk'
 import { DEEPSEEK, FakeDeepSeek } from './deepseek'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
+import { FakePostHog, POSTHOG } from './posthog'
 import { failingTitles, titleRequests } from './titles'
 
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
@@ -59,6 +60,8 @@ export class FakeBrowser {
   readonly openRouter = new FakeOpenRouter()
   /** DeepSeek, for a user's own model; script its model, and read what it was sent. */
   readonly deepSeek = new FakeDeepSeek()
+  /** PostHog, where the panel sends usage events; read what it was sent. */
+  readonly postHog = new FakePostHog()
   /** Every request the panel sent the worker, as text: its URL, headers, and body. */
   readonly sentToWorker: string[] = []
 
@@ -139,16 +142,18 @@ export class FakeBrowser {
       const request = new Request(input, init)
       if (request.url.startsWith(`${OPENROUTER}/`)) return browser.openRouter.handle(request)
       if (request.url.startsWith(`${DEEPSEEK}/`)) return browser.deepSeek.handle(request)
+      if (request.url.startsWith(`${POSTHOG}/`)) return browser.postHog.handle(request)
       const headers = [...request.headers].map(([name, value]) => `${name}: ${value}`).join('\n')
       browser.sentToWorker.push(`${request.url}\n${headers}\n${await request.clone().text()}`)
       return browser.worker(request)
     }
-    // A new browser profile: no saved sessions.
+    // A new browser profile: no saved sessions, and nothing in the extension's localStorage.
     globals.indexedDB = new IDBFactory()
+    localStorage.clear()
 
     tab.install()
     const chrome = globals.chrome as { tabs: Record<string, unknown> } & Record<string, unknown>
-    chrome.runtime = { getURL: (path: string) => `${EXTENSION}/${path}` }
+    chrome.runtime = { getURL: (path: string) => `${EXTENSION}/${path}`, getManifest: () => ({ version: '1.2.3' }) }
     chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
     chrome.cookies = {

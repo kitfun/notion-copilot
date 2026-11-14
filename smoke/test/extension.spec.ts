@@ -1,6 +1,6 @@
 // Loads the built extension (extensions/notico/dist) into Chromium and checks that it still works there.
 // Nothing leaves the machine: Notion, the other site, and Clerk's Frontend API are answered from
-// fixtures/, and any other request fails the test. The extension's own code and its bundled
+// fixtures/, usage events are taken and dropped, and any other request fails the test. The extension's own code and its bundled
 // dependencies run unchanged.
 import { chromium, expect, test as base, type BrowserContext, type Request, type Worker } from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -77,6 +77,11 @@ const test = base.extend<Fixtures>({
         request.method() === 'GET' && clerkHosts.includes(url.hostname) ? CLERK_FIXTURES[url.pathname] : undefined
       if (clerkFixture) {
         return route.fulfill({ path: path.join(FIXTURES, clerkFixture), headers: corsHeaders(request) })
+      }
+      // A usage event (src/analytics.ts), when the build has a PostHog key: taken as PostHog takes
+      // it, and sent nowhere. Anything else to PostHog (a script, its configuration) is blocked.
+      if (request.method() === 'POST' && url.hostname.endsWith('.i.posthog.com') && url.pathname === '/e/') {
+        return route.fulfill({ json: { status: 1 }, headers: corsHeaders(request) })
       }
       blocked.push(`${request.method()} ${request.url()}`)
       return route.abort()

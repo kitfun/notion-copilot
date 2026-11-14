@@ -2,7 +2,7 @@
 
 Notico is a Chrome extension that opens an AI side panel in Chrome, which reads and edits your Notion pages with you. It is one of the [Cofun](../../README.md) extensions, which share one server and one sign-in. This page says what data Notico reads, where that data goes, and what is kept on your device. What the server and the sign-in do with it, the same for every Cofun extension, is on [Cofun's privacy page](../../PRIVACY.md); the two pages together are Notico's privacy policy. They describe the extension built from this folder with its committed configuration (`extensions/notico/.env`) and the worker deployed from `worker/`. If you build the extension against your own deployment, the hosts are the ones you configure.
 
-The short version: when you ask a question, the conversation, including the Notion content the assistant read to answer it, goes to our worker and from there to an AI model that runs on Cloudflare. If you set up your own model on OpenRouter or DeepSeek, it goes to that service instead, with your own key, and not to our worker. We do not store that content on our servers. Your chats are saved on your device only.
+The short version: when you ask a question, the conversation, including the Notion content the assistant read to answer it, goes to our worker and from there to an AI model that runs on Cloudflare. If you set up your own model on OpenRouter or DeepSeek, it goes to that service instead, with your own key, and not to our worker. We do not store that content on our servers. Your chats are saved on your device only. Unless you turn it off in the settings, Notico also tells us which of its features are used and whether they worked, never what you asked, what the assistant answered, or anything from your pages.
 
 ## What the extension reads
 
@@ -28,6 +28,7 @@ The extension sends requests to these hosts and no others. The extension's conte
 | `api.cofun.cc` (our worker) | Your Clerk session token, and when you buy credits, which pack you chose | To list the packs of credits on offer, and to start a checkout for the one you chose |
 | `openrouter.ai` (OpenRouter), only once you switch it on in the settings | When you check your OpenRouter key in the settings: the key, to OpenRouter's key endpoint, which says whether it works and what it has left, and asks no model anything. Once a key is saved and OpenRouter is on, when the settings page shows it: a request for its public list of models, with nothing of yours in it, once each time the side panel opens, and again after a request that failed. When you ask a question with one of its models chosen: your OpenRouter key, and the conversation so far, as listed for the worker above (Notion content the assistant read included) | To get the reply from the model you chose, under your own OpenRouter account. OpenRouter passes the conversation to the company that runs that model; [OpenRouter's privacy policy](https://openrouter.ai/privacy) says what they keep. These questions do not go to our worker and spend no credits |
 | `api.deepseek.com` (DeepSeek), only once you switch it on in the settings | When you check your DeepSeek key in the settings: the key, to DeepSeek's balance endpoint, which says whether it works and the account's balance, and asks no model anything. When you ask a question with a DeepSeek model chosen: your DeepSeek key, and the conversation so far, as listed for the worker above (Notion content the assistant read included). The list of DeepSeek's models comes with the extension, so it is not requested | To get the reply from the DeepSeek model you chose, under your own DeepSeek account. [DeepSeek's privacy policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html) says what DeepSeek keeps and where it stores it. These questions do not go to our worker or to OpenRouter, and spend no credits |
+| `us.i.posthog.com` ([PostHog](https://posthog.com), US region), unless you turn usage data off in the settings | Usage events, as listed under [Usage data](#usage-data): that something happened, with names from a fixed list, counts, and yes/no values, under a random id for your device and, once you are signed in, your Clerk user id. Never your messages, the assistant's replies, Notion content, a page's title or URL, or a key | To see how Notico is used and where it fails, so we can improve it |
 | `clerk.cofun.cc` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
 | `img.clerk.com` (Clerk's image host) | A request for your account's avatar image | To show who is signed in, in the side panel's account menu and settings page |
 
@@ -35,13 +36,34 @@ The extension also holds a host permission for `*.cofun.cc`. It uses it for noth
 
 Notion content never goes to Clerk. Your OpenRouter key is sent only to OpenRouter, and your DeepSeek key only to DeepSeek: neither goes to our worker, to Clerk, or to the other service. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
 
-As with any web service, Cloudflare (which runs the worker) and Clerk see your IP address when the extension connects to them.
+As with any web service, Cloudflare (which runs the worker), Clerk, and PostHog see your IP address when the extension connects to them. Usage events tell PostHog not to work out a location from it, and our PostHog project is set not to keep it.
 
 When you buy credits, the extension opens Stripe's Checkout page (`checkout.stripe.com`) in a normal tab, as a link would. The extension sends nothing to Stripe itself: what you enter on that page goes to Stripe, and never to the extension or the worker. [Cofun's privacy page](../../PRIVACY.md#buying-credits) says what Stripe and the worker exchange.
 
 ### The sign-in page
 
 "Sign in" opens Cofun's sign-in page, `https://api.cofun.cc/login`, in a normal tab. What you enter there goes to Clerk and to the sign-in provider you choose, not to our worker; [Cofun's privacy page](../../PRIVACY.md#the-sign-in-page) says more. The side panel shows your name, email address, and avatar from that account, and lets you sign out; it offers nothing to change the account.
+
+## Usage data
+
+Notico sends usage events to PostHog, a product analytics service, so that we can see how it is used: whether people who open the panel get as far as asking a question, which tools are used and how often they fail, and which of the panel's actions are used at all. **It is on until you turn it off**: open the settings from the account menu and switch off "Share usage data". While it is off, the analytics code is not started and nothing is sent to PostHog; switching it off takes effect at once, and an event that did not reach PostHog is never sent again later.
+
+An event says that something happened, never what was written or read. Every value in it is a name from a fixed list, a number, or yes/no, and the code refuses to send an event that holds anything else. These are all the events:
+
+| Event | What it holds |
+|---|---|
+| The panel was opened; the sign-in page was opened; you signed in | Nothing more |
+| Your device's random id was joined to your account (`$identify`, sent by the analytics code when it first sees you signed in) | The random id and your Clerk user id |
+| A question was asked | Which service answers (Notico's own model, OpenRouter, or DeepSeek), and whether the current tab was a Notion page |
+| A question ended | The same service; how it ended (answered, stopped, out of steps, or failed, with our server's error code if it had one); how many times the model was called; how many tools ran |
+| A tool ran | The tool's name (such as `read_page`), whether it worked and how it ended, and Notion's kind of error if it failed (such as "no access") |
+| The model was switched; a key of your own was saved | Which service. Never the key, or the model's name |
+| The settings were opened; the credit history was opened; a pack of credits was chosen to buy | For a pack, its size |
+| A chat was started, opened, or deleted; a page was added to a question; a reply was stopped or copied | For an added page, whether with `@` or the "+" button. Never a chat's title, a page, or the reply |
+
+Every event also holds the name of the extension (`notico`) and its version, the time, a random id of its own, the public key of our PostHog project, the name and version of the analytics code, the name and version of your browser and the name of your operating system, a random id for the stretch of use it belongs to, an instruction to PostHog not to work out a location, and who it is counted under, with whether that is an account: a random id made on your device, and once you are signed in your Clerk user id, to which that random id is joined, so that what happened before and after signing in is counted as one person. It holds no URL, no page title, not your name or email address, and not your time zone, language, or screen size.
+
+Notico does not record clicks, keystrokes, or the screen, does not use PostHog's session replay, automatic event capture, or error reporting, and loads no code from PostHog: the analytics code is part of the extension's package. [PostHog's privacy policy](https://posthog.com/privacy) says how PostHog handles the data it is sent. When a payment for credits goes through, our worker also tells PostHog so; [Cofun's privacy page](../../PRIVACY.md#buying-credits) says what that holds.
 
 ## What the worker does with it
 
@@ -54,11 +76,13 @@ The side panel's account menu and settings page show your credits (how many are 
 - **Your chats.** Chats are saved in the extension's IndexedDB storage in your Chrome profile, one database per signed-in account. They include tool results, such as the content of Notion pages the assistant read, and the URL and title of a tab it looked up. They are not sent to our servers, except that continuing a chat sends it to the worker again as described above. They are **not encrypted** and they **stay after you sign out**, so that you can pick up again: anyone with access to your Chrome profile can read them. Deleting a chat in the side panel removes it; removing the extension removes them all.
 - **Your sign-in.** Clerk's code in the extension keeps its client token, which keeps you signed in, in the extension's local storage (`chrome.storage.local`). It is not encrypted either.
 - **Your own model, if you set one up.** Your OpenRouter key and your DeepSeek key, each with whether it is switched on, the models you switched on there, and when it last turned a question away for the key, and the model chosen in the message box, are kept in the extension's local storage (`chrome.storage.local`), for the account that set them up: another account signed in on the same Chrome profile does not use them. They are **not encrypted** and they **stay after you sign out**; anyone with access to your Chrome profile can read the keys. Switching a provider off keeps its key; removing a key in the settings page deletes it, and removing the extension deletes it too. A key is saved only after the provider said it works.
-- **Small settings.** The extension's local storage also holds, for each account, whether the assistant may change your pages (Edit or Read only), and the time until which it waits after Notion turned a request away.
+- **Small settings.** The extension's local storage also holds, for each account, whether the assistant may change your pages (Edit or Read only), and the time until which it waits after Notion turned a request away; and for the device, whether usage data is shared, once you have changed it.
+- **The ids usage is counted under.** While usage data is on, the analytics code keeps, in the extension's own page storage (`localStorage`), the random id made for your device, the random id of the current stretch of use, and, once you are signed in, your Clerk user id. They are sent with usage events as described under [Usage data](#usage-data). It keeps its own bookkeeping there too, which is not sent: times, counts of the events sent, and the side panel page's own address inside the extension. After you turn usage data off they stay on the device and are sent nowhere. Removing the extension deletes them.
 
 ## What is never collected
 
-- No analytics, advertising, or tracking in the extension. It loads no remote code.
+- No conversation content in usage data: what Notico tells PostHog about how it is used never holds your messages, the assistant's replies, Notion content, a page's title or URL, or a key (see [Usage data](#usage-data)), and you can turn it off.
+- No advertising, no tracking across sites or other extensions, no session recording, and no recording of clicks or keystrokes. The extension loads no remote code.
 - The worker does not store Notion content, messages, or replies, and does not write them to its logs (of a failed model call or an unexpected failure it logs only a short, bounded part of the error, as described above).
 - No Notion credentials or cookies are sent to the worker or to Clerk.
 - No browsing history, and no content of other sites. Of a tab that is not Notion, only its URL and title can leave the browser, only for the current tab, and only when the assistant looks them up to answer a question.

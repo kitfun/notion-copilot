@@ -116,8 +116,11 @@ export type AgentUpdate =
    * them (the model's, checked and converted to the schema), and what it changes, when the tool can say.
    */
   | { type: 'tool_ready'; id: string; args: unknown; preview?: string }
-  /** `result`: what the model got back, the error message when the tool failed. */
-  | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string }
+  /**
+   * `result`: what the model got back, the error message when the tool failed. `code`: the code of
+   * the error the tool failed with, when it has one (a Notion error's, such as `no_access`).
+   */
+  | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string; code?: string }
 
 /** Tokens a question used. `input` counts all of the input, `cached` the part of it read from the service's cache. */
 const TokenUsage = z.object({ input: z.number(), output: z.number(), cached: z.number() })

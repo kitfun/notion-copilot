@@ -63,7 +63,7 @@ No, I am not using remote code. Everything the extension runs is in its package;
 | Personal communications | Yes | The user's conversation with the assistant goes to the worker and the model, and to the user's own Notion workspace when the user saves a chat or a reply there |
 | Location | No | The clock's offset from UTC is sent for the credit history; it is not a location |
 | Web history | Yes | A tab's URL and title, when a question needs them, and the URL and title of a Notion page open in another tab that the user adds to a question |
-| User activity | No | |
+| User activity | Yes | Usage events sent to PostHog, unless the user turns them off in the settings: that the panel was opened, a question asked and how it ended, which tools ran, and which of the panel's actions were used. Names from a fixed list, counts, and yes/no values only: no text typed, no page content, title, or URL, no clicks or keystrokes recorded |
 | Website content | Yes | The Notion content the assistant reads goes to the worker and the model |
 
 All three certifications are checked: no selling or transfer of user data to third parties outside the approved use cases, no use or transfer for purposes unrelated to the single purpose, and none to determine creditworthiness or for lending.
@@ -75,6 +75,7 @@ This page describes version 0.1.0, the one in the store. The version after it le
 - The **storage** justification also says that the user's own model keys, and the model chosen with each, are kept there.
 - The **storage** justification also names the setting for whether the assistant may change the user's pages (Edit or Read only).
 - **Financial and payment information** becomes Yes: the worker keeps each purchase, by Clerk user id, with its Stripe payment reference and whether it was refunded or disputed (see `PRIVACY.md`). The card details go to Stripe's Checkout page, never to the extension or the worker.
+- **User activity** becomes Yes, as the table above already says, and the **storage** justification also names the setting that turns usage data off (in `chrome.storage.local`). The random id usage is counted under before sign-in is kept in the extension's own `localStorage`, which needs no permission. PostHog (`us.i.posthog.com`) is reached under the content security policy, not through a host permission. Usage events hold no content and are used only to improve the extension, which is within the Limited Use policy; the certifications stay checked.
 - The rest of the data usage stays as it is: a user's own key is authentication information, and the conversation and the Notion content it holds go to the model service the user chose, which is personal communications and website content again. The privacy policy already says so.
 - The extension asks for no new permission: OpenRouter and DeepSeek are reached under the content security policy, not through host permissions.
 

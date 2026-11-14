@@ -49,6 +49,10 @@
     // docs/development.md).
     "CREDIT_PRICE": "price_1UbLSMCT6MhL4FCmD4mRe680",
     "CREDIT_PACKS": [1, 5, 20, 100],
+    // Product analytics: PostHog's ingestion host (US region) and the project's key (phc_…, public
+    // by design; the same one as extensions/notico/.env). With the key empty, no event is sent.
+    "POSTHOG_HOST": "https://us.i.posthog.com",
+    "POSTHOG_KEY": "phc_gO1i2DKlg9TOf0mme2DKkZ0EezWMZ0yNjXOFTDhBaNu",
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
     "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvmcyRgQuBYHuMrpM4d5N\nwQ9Y7i59S80hLM7Qd68gIpszm0Mi7eOIMmxTOVIePX4jsjf+ByfPl6qluXsPGik/\nwtr1ti37UUADTdC1qjn3jabY22UebFXgxp6Fq6XHJKelmHQBm77OwzZMPzPgmnwK\nM9nJuxXpsGtNH3a8xzC8Ql8UOJE5eWvgXKcu48b/Awja7J+yGQe7OklbaJL71FrJ\nPGUDS7bLVHvJP8/xTd3eii+LdqN5o7RDqwDu1wesJ9g2f8ykLfd55ykVZURr8R3w\n6Z46/wXqoufUn4CdRwsY19zNQlhruUMSGsRLn9PiYOfL1aBHZZzR/tLRndIFq9lY\nqQIDAQAB\n-----END PUBLIC KEY-----\n"
   }

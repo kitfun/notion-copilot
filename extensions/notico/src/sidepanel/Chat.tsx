@@ -20,6 +20,7 @@ import {
   type QuestionDetails,
   type QuestionPage,
 } from '../agent'
+import { track } from '../analytics'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import {
@@ -307,6 +308,7 @@ export function Chat({ userId }: { userId: string }) {
     // The open page, taken off before, goes with the question again: the user chose it.
     if (tabPage && pageKey(tabPage) === key) setRemoved(undefined)
     setChosen((list) => (list.some((p) => pageKey(p) === key) ? list : [...list, page]))
+    track({ event: 'page_added', how: picker?.from === '@' ? 'mention' : 'button' })
     if (picker?.from === '@') {
       const end = picker.start + 1 + picker.query.length
       setInput(input.slice(0, picker.start) + input.slice(end))
@@ -425,7 +427,15 @@ export function Chat({ userId }: { userId: string }) {
 
   /** Saves what `update` makes of the model settings as they are now, here or saved by another window. */
   function changeModel(update: (settings: ModelSettings) => ModelSettings) {
-    const settings = update(modelRef.current ?? HOSTED_ONLY)
+    const before = modelRef.current ?? HOSTED_ONLY
+    const settings = update(before)
+    // Which service answers now, and a key that was just saved: never the key or the model's name.
+    const provider = answering(settings)?.service ?? 'hosted'
+    if (provider !== (answering(before)?.service ?? 'hosted')) track({ event: 'model_switched', provider })
+    if (settings.openRouter && settings.openRouter.key !== before.openRouter?.key)
+      track({ event: 'own_key_saved', provider: 'openrouter' })
+    if (settings.deepSeek && settings.deepSeek.key !== before.deepSeek?.key)
+      track({ event: 'own_key_saved', provider: 'deepseek' })
     modelRef.current = settings
     setModel(settings)
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
@@ -472,12 +482,14 @@ export function Chat({ userId }: { userId: string }) {
 
   /** Opens Stripe's Checkout for the pack of `quantity` in a new tab. */
   async function buyCredits(quantity: number) {
+    track({ event: 'credits_buy_clicked', pack: quantity })
     const url = await agent.checkout(quantity)
     checkoutOpened.current = true
     await chrome.tabs.create({ url })
   }
 
   function openSettings(at?: 'providers') {
+    track({ event: 'settings_opened' })
     setSettingsAt(at)
     setView('settings')
     void readCredits()
@@ -592,7 +604,13 @@ export function Chat({ userId }: { userId: string }) {
         })
       })
 
+    // Tool calls of this question that ended, however they did.
+    let toolCalls = 0
     const onUpdate = (u: AgentUpdate) => {
+      if (u.type === 'tool_end') {
+        toolCalls++
+        track({ event: 'tool_called', tool: u.name, ok: u.status === 'done', status: u.status, error_code: u.code })
+      }
       if (u.type === 'text')
         updateReply((m) => {
           const last = m.parts.at(-1)
@@ -653,7 +671,18 @@ export function Chat({ userId }: { userId: string }) {
         )
       // The key the question goes with, if it goes to the user's own model: a 401 marks that key only.
       const askedWith = answering(modelRef.current ?? (await modelLoad))
+      // The service the question is asked of, as the agent reads it when the question starts.
+      const provider = askedWith?.service ?? 'hosted'
+      track({ event: 'question_asked', provider, notion_tab: !!tabPage })
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
+      track({
+        event: 'question_ended',
+        provider,
+        outcome: result.status,
+        error_code: result.status === 'error' ? result.code : undefined,
+        rounds: agent.rounds(),
+        tool_calls: toolCalls,
+      })
       answered = result.status === 'done'
       const { requests, tokens, model, cost } = result
       updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
@@ -818,12 +847,14 @@ export function Chat({ userId }: { userId: string }) {
     if (!session) return 'gone'
     if (session === 'unreadable') return 'unreadable'
     switchTo(session)
+    track({ event: 'chat_opened' })
     return 'opened'
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     if (busy) {
+      track({ event: 'reply_stopped' })
       setStopping(true)
       declineAll()
       stopped.current++
@@ -930,7 +961,15 @@ export function Chat({ userId }: { userId: string }) {
         >
           <Icon name="history" />
         </button>
-        <button className="icon-button tip-below" aria-label="New chat" data-tip="New chat" onClick={() => switchTo()}>
+        <button
+          className="icon-button tip-below"
+          aria-label="New chat"
+          data-tip="New chat"
+          onClick={() => {
+            track({ event: 'chat_created' })
+            switchTo()
+          }}
+        >
           <Icon name="compose" />
         </button>
         <AccountMenu
@@ -1089,6 +1128,7 @@ export function Chat({ userId }: { userId: string }) {
             onOpen={open}
             onClose={closeList}
             onDeleted={(id) => {
+              track({ event: 'chat_deleted' })
               deleted.current.add(id)
               // The open session is being deleted: stop its reply, so it isn't saved back.
               if (id !== current?.id) return
@@ -1289,7 +1329,10 @@ function CopyButton({ text }: { text: string }) {
         data-tip={label}
         onClick={() =>
           navigator.clipboard.writeText(text).then(
-            () => setState('copied'),
+            () => {
+              track({ event: 'reply_copied' })
+              setState('copied')
+            },
             () => setState('failed'),
           )
         }

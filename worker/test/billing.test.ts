@@ -13,8 +13,8 @@ import {
   FakeAiBinding,
   FakeD1Database,
   FakeExecutionContext,
-  FakeUsageDataset,
   FakeRateLimiter,
+  FakeUsageDataset,
   MODEL,
   usageCosting,
 } from './fakes'
