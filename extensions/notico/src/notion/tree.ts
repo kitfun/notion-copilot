@@ -1,7 +1,7 @@
 // Listing pages as Notion's sidebar shows them: titles and ids, level by level, without content.
 // Like Notion's own sidebar, it finds which children are pages by looking up the blocks a page
 // holds, so it asks for as few of them as it can: in order, only until the list is full, each at
-// most once, and only so many lookups per list.
+// most once, and only so many lookups per tool call.
 import { mergeRecordMaps, type Block, type NotionClient, type RecordMap } from './api'
 import { LAYOUT_TYPES, PAGE_TYPES, collectionId, hexId } from './markdown'
 
@@ -58,6 +58,11 @@ export class PageLookups {
   }
 }
 
+/** How many block lookups (one request each) a tool call may still make; lists can share one. */
+export interface Lookups {
+  left: number
+}
+
 export interface PageTree {
   nodes: TreeNode[]
   /** The entry of the top level the ones not listed start at, when it stopped before its end. */
@@ -74,16 +79,15 @@ export interface PageTree {
 /**
  * Builds the tree under `ids` (the blocks of the top level, in order: layout blocks are looked
  * through, so their blocks are entries in their place), `depth` levels deep, with at most `limit`
- * entries, from entry `skip` of the top level on. Besides the lookups that skipping takes, at most
- * `lookups` block lookups (one request each) are made; where it stops for lack of them, the result
- * says what wasn't looked into.
+ * entries, from entry `skip` of the top level on. Besides the lookups that skipping takes, its
+ * block lookups come out of `budget`; where it stops for lack of them, the result says what wasn't
+ * looked into.
  */
 export async function pageTree(
   cache: PageLookups,
   ids: string[],
-  { depth, limit, lookups, skip = 0 }: { depth: number; limit: number; lookups: number; skip?: number },
+  { depth, limit, budget, skip = 0 }: { depth: number; limit: number; budget: Lookups; skip?: number },
 ): Promise<PageTree> {
-  const budget = { left: lookups }
   const top = await walk(cache, [ids], limit, budget, skip)
   const nodes = await nodesFor(cache, top.pages[0])
   let count = nodes.length
@@ -212,6 +216,20 @@ function upcoming(
   for (let f = stack.length - 1; f >= 0; f--) if (!visit(stack[f].ids.slice(stack[f].at), stack[f].hop)) break
   for (const list of lists) if (out.size >= LOOKUP_BATCH || !visit(list, 0)) break
   return [...out]
+}
+
+/**
+ * Looks up the blocks among `ids` not known yet, and the names of the databases among them, a batch
+ * at a time while `budget` lasts: for lists of pages known to be pages (a workspace's sections), so
+ * the lists built from them afterwards find them known and send nothing more.
+ */
+export async function lookUpPages(cache: PageLookups, ids: string[], budget: Lookups): Promise<void> {
+  while (budget.left > 0 && ids.some((id) => cache.unknown(id))) {
+    budget.left--
+    await cache.blocks(ids)
+  }
+  const blocks = ids.map((id) => cache.block(id)).filter((b): b is Block => !!b && b.type !== 'page')
+  await cache.collections(blocks.filter((b) => PAGE_TYPES.has(b.type)))
 }
 
 /** The sidebar pages among `ids`, as nodes, in order. */

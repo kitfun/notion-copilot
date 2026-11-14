@@ -95,8 +95,6 @@ const lookups = (tab: FakeNotionTab) =>
   tab.sent
     .filter((r) => r.url.endsWith('/syncRecordValuesMain'))
     .map((r) => (r.body.requests as { pointer: { id: string } }[]).map((q) => q.pointer.id))
-/** The lookups a section of the overview may make, by its limit. */
-const sectionLookups = Math.ceil((LIST_LOOKUPS * SECTION_LIMIT) / LIST_LIMIT)
 
 describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
   it('[UC-NOTICO-NOTION-005-S01] lists the top level by section, with titles and ids and no content', async () => {
@@ -452,22 +450,6 @@ describe('list_pages at the limit', () => {
     expect(listed(result)).toHaveLength(LIST_LIMIT)
     expect(result).not.toContain('(')
   })
-
-  it("gives a section's own limit when pages under it are cut off", async () => {
-    const kids = range(500, 30)
-    notion([
-      ...pages(kids, 'Child', (i) => [id(2000 + i * 2), id(2001 + i * 2)]),
-      ...pages(range(2000, 60), 'Grandchild'),
-    ])
-      .respond('getSpaces', 200, spaces({}, { private_pages: kids }))
-      .respond('getTeamsV2', 200, teams([]))
-      .install()
-    const result = await run({ depth: 2 })
-    expect(listed(result)).toHaveLength(SECTION_LIMIT)
-    expect(result).toContain(
-      `(Cut off: this list shows at most ${SECTION_LIMIT} pages, so some pages under the ones shown are left out.`,
-    )
-  })
 })
 
 describe('list_pages requests to Notion', () => {
@@ -519,20 +501,29 @@ describe('list_pages requests to Notion', () => {
     expect(listed(rest)).toEqual(kids.map((k, i) => `- 📄 Child ${i} ^${hex(k)}`))
   })
 
-  it("shares the lookups across the overview's sections by their limits", async () => {
-    // Every private page holds a lot of text before its one subpage.
-    const own = range(100, 40)
-    const tab = notion([
-      ...own.flatMap((k, i) => wordy(k, `Private ${i}`, range(10_000 + i * 400, 300), 1000 + i)),
-      page(3, 'Shared plan'),
-    ])
-      .respond('getSpaces', 200, spaces({}, { private_pages: own, shared_pages_manual_sort: [id(3)] }))
-      .respond('getTeamsV2', 200, teams([]))
+  it('[UC-NOTICO-NOTION-005-S09] lists the top level of many teamspaces with a request or two, not one per section', async () => {
+    // Twenty teamspaces of two wordy pages each, and a database among them.
+    const list = Array.from({ length: 20 }, (_, t) => team(t + 1, `Team ${t}`, range(100 + t * 2, 2)))
+    const blocks: Rec[] = list.flatMap((_, t) =>
+      [0, 1].flatMap((p) =>
+        wordy(id(100 + t * 2 + p), `Team ${t} page ${p}`, range(10_000 + (t * 2 + p) * 400, 300), 1000 + t * 2 + p),
+      ),
+    )
+    blocks[0] = { id: id(100), type: 'collection_view_page', collection_id: COLLECTION }
+    const tab = notion(blocks, { collections: [{ id: COLLECTION, name: [['Tasks']] }] })
+      .respond('getSpaces', 200, spaces({}, {}))
+      .respond('getTeamsV2', 200, teams(list))
       .install()
-    const result = await run({ depth: 2 })
-    // The open page, then Private's share (its limit is half the list's), then one for Shared.
-    expect(lookups(tab)).toHaveLength(1 + sectionLookups + 1)
-    expect(result).toContain(`Shared\n- 📄 Shared plan ^${hex(id(3))}`)
+    const result = await run()
+    expect(listed(result)).toHaveLength(40)
+    expect(result).toContain(`Teamspace: Team 0\n- 🗃 Tasks ^${hex(id(100))}\n- 📄 Team 0 page 1 ^${hex(id(101))}`)
+    // The open page, then every section's pages at once, then the database's name.
+    expect(endpoints(tab).filter((e) => e === 'syncRecordValuesMain')).toHaveLength(3)
+
+    // Looking under them needs a section or page, and is refused before asking Notion.
+    const sent = tab.sent.length
+    await expect(run({ depth: 2 })).rejects.toThrow('`depth` needs `page` or `section`')
+    expect(tab.sent).toHaveLength(sent)
   })
 
   it('names a section it ran out of lookups for as not listed', async () => {
@@ -544,7 +535,8 @@ describe('list_pages requests to Notion', () => {
     const result = await run()
     expect(result).toContain('Not listed, to keep the list short: Private. List one with `section`.')
     expect(result).toContain(`Shared\n- 📄 Shared plan ^${hex(id(3))}`)
-    expect(lookups(tab)).toHaveLength(1 + sectionLookups + 1)
+    // The open page, then the lookups the overview's sections share.
+    expect(lookups(tab)).toHaveLength(1 + LIST_LOOKUPS)
   })
 
   it("asks for the open page's workspace once", async () => {

@@ -5,7 +5,7 @@ import { pageLink } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { PAGE_TYPES, hexId } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
-import { PageLookups, contentOf, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
+import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
 import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
 import { LIST, NONE, SEARCH, filled, on, pageArg, wholeArg } from './shared'
@@ -17,17 +17,18 @@ export const LIST_LIMIT = 100
 export const SECTION_LIMIT = 50
 /**
  * How many block lookups (one request each) one list makes to find which blocks are pages, besides
- * those that skipping to `offset` takes. In the overview, each section gets a share by its limit.
+ * those that skipping to `offset` takes. The overview's sections share them.
  */
 export const LIST_LOOKUPS = 20
 
 export const listPages = defineTool({
   name: 'list_pages',
   description:
-    "Lists pages and databases as Notion's sidebar shows them: without `page`, the top level of the open page's " +
-    'workspace by section (Private, Shared, Workspace, and each teamspace the user joined); with `page`, the ' +
-    'pages and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also ' +
-    'lists the pages under those, up to 3 levels. A long list is cut off; `section` and `offset` list the rest.',
+    "Lists pages and databases as Notion's sidebar shows them: without `page` or `section`, the top level of the " +
+    "open page's workspace by section (Private, Shared, Workspace, and each teamspace the user joined); with `section`, " +
+    'one of those sections; with `page`, the pages and databases under it. Titles and ids only, no content: ' +
+    'read a page with read_page. With `page` or `section`, `depth` also lists the pages under those, up to 3 ' +
+    'levels. A long list is cut off; `section` and `offset` list the rest.',
   touched: () => NONE,
   describe: (args) =>
     args?.page
@@ -42,7 +43,12 @@ export const listPages = defineTool({
           "a teamspace's name).",
       )
       .optional(),
-    depth: wholeArg('depth', 'How many levels to list. Defaults to 1.', 1, LIST_MAX_DEPTH),
+    depth: wholeArg(
+      'depth',
+      'With `page` or `section`: how many levels to list. Defaults to 1, the only depth without them.',
+      1,
+      LIST_MAX_DEPTH,
+    ),
     offset: wholeArg(
       'offset',
       'With `page` or `section`: skip this many entries of the top level, to see what a cut-off list left ' +
@@ -57,6 +63,12 @@ export const listPages = defineTool({
     const wanted = filled(section)?.trim()
     if (wanted && rootId) throw new Error('Give `page` or `section`, not both.')
     if (offset && !rootId && !wanted) throw new Error('`offset` needs `page` or `section`.')
+    if (depth > 1 && !rootId && !wanted) {
+      throw new Error(
+        '`depth` needs `page` or `section`: without them, only the top level is listed. List it first, then ' +
+          'list the section or page to look under with `depth`.',
+      )
+    }
     const tab = await activeNotionTab()
 
     if (rootId) {
@@ -73,7 +85,7 @@ export const listPages = defineTool({
       const tree = await pageTree(cache, contentOf(cache, rootId), {
         depth,
         limit: LIST_LIMIT,
-        lookups: LIST_LOOKUPS,
+        budget: { left: LIST_LOOKUPS },
         skip: offset,
       })
       const title = runsText(root.properties?.title) || 'Untitled'
@@ -132,7 +144,12 @@ export const listPages = defineTool({
         )
       }
       const [label, all] = section
-      const tree = await pageTree(cache, all, { depth, limit: LIST_LIMIT, lookups: LIST_LOOKUPS, skip: offset })
+      const tree = await pageTree(cache, all, {
+        depth,
+        limit: LIST_LIMIT,
+        budget: { left: LIST_LOOKUPS },
+        skip: offset,
+      })
       return [
         `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
@@ -142,7 +159,20 @@ export const listPages = defineTool({
     }
 
     // Each section has its own share of the limit, so a long one can't hide the others, and all of
-    // them together stay within the overall limit.
+    // them together stay within the overall limit. Their top levels are pages, so the ones that can
+    // be shown (and one more each, to tell whether more follow) are looked up together, however many
+    // sections there are, out of the lookups they all share.
+    const budget = { left: LIST_LOOKUPS }
+    const shown: string[] = []
+    let room = LIST_LIMIT
+    for (const [, ids] of sections) {
+      if (room <= 0) break
+      const take = Math.min(SECTION_LIMIT, room, ids.length)
+      shown.push(...ids.slice(0, take + 1))
+      room -= take
+    }
+    await lookUpPages(cache, shown, budget)
+
     const out = [`Pages in the workspace “${space.name}”:`]
     const skipped: string[] = []
     let any = false
@@ -154,15 +184,14 @@ export const listPages = defineTool({
         continue
       }
       const limit = Math.min(SECTION_LIMIT, left)
-      const lookups = Math.ceil((LIST_LOOKUPS * limit) / LIST_LIMIT)
-      const tree = await pageTree(cache, ids, { depth, limit, lookups })
+      const tree = await pageTree(cache, ids, { depth: 1, limit, budget })
       if (!tree.nodes.length) {
         // Out of lookups before finding any of its pages: it can still be listed alone.
         if (tree.next !== undefined) skipped.push(label)
         continue
       }
       any = true
-      left -= countNodes(tree.nodes)
+      left -= tree.nodes.length
       out.push('', label, ...treeLines(tree.nodes), ...cutOff(tree, limit, label))
     }
     if (skipped.length)
@@ -198,10 +227,6 @@ function cutOff(tree: PageTree, limit: number, section?: string): string[] {
       `(Not looked into: what is under some of the pages shown, to keep this list short and its requests to Notion few. ${deeper})`,
     ]
   return []
-}
-
-function countNodes(nodes: { children: unknown[] }[]): number {
-  return nodes.reduce((n, node) => n + 1 + countNodes(node.children as { children: unknown[] }[]), 0)
 }
 
 const SEARCH_DEFAULT = 10

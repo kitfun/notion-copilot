@@ -80,7 +80,7 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 3,
-        "description": "How many levels to list. Defaults to 1."
+        "description": "With `page` or `section`: how many levels to list. Defaults to 1, the only depth without them."
       },
       "offset": {
         "type": "integer",
