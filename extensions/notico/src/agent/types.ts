@@ -206,4 +206,11 @@ export type AskResult = (
   /** `code`: the worker's error code when it refused the question, e.g. `out_of_credits`. */
   | { status: 'error'; message: string; code?: string }
 ) &
-  QuestionDetails
+  QuestionDetails & {
+    /**
+     * The conversation the question was asked in, as it stands now that the question is part of it,
+     * to save: still that conversation when reset() started another one meanwhile. Not set when the
+     * question left the conversation as it was (it failed or was stopped before it used a tool).
+     */
+    conversation?: HistoryMessage[]
+  }

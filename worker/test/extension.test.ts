@@ -152,9 +152,10 @@ const usedOnHosted = (calls: number): QuestionDetails => ({
  */
 async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
   const updates: AgentUpdate[] = []
-  const { tokens, model, cost, ...result } = await agent.ask(text, (u) => updates.push(u), confirm, extras)
+  const asked = await agent.ask(text, (u) => updates.push(u), confirm, extras)
+  const { tokens, model, cost, conversation, ...result } = asked
   const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
-  return { result, used: { tokens, model, cost }, updates, reply }
+  return { result, used: { tokens, model, cost }, conversation, updates, reply }
 }
 
 /** A stand-in for a tool that needs the user's OK each time, like moving a page to the trash; records each run. */

@@ -1200,30 +1200,58 @@ describe('sessions', () => {
     await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^What is on the roadmap\?/)]))
   })
 
-  it('[UC-NOTICO-SESSION-001-S08] switching sessions stops a reply still coming in, and it lands in neither session', async () => {
+  /** The chats in the open list, by what each row says, newest first. */
+  const listed = () =>
+    sessionList()
+      .queryAllByRole('button', { name: /Fixture page/ })
+      .map((b) => b.textContent)
+  /** Each tool call of the conversation as its reply says it, in order. */
+  const toolsSaid = () =>
+    conversation()
+      .queryAllByText((_, el) => el?.tagName === 'SUMMARY')
+      .map((s) => s.textContent?.trim())
+
+  /**
+   * A model reply long enough to stop partway, until `resume` is called, while the replies before it
+   * that only call tools, which are shorter, come in whole.
+   */
+  const pausedAfterTools = (browser: FakeBrowser, start: string) =>
+    pausedReply(browser, `${start} ${Array.from({ length: 200 }, (_, n) => `word${n}`).join(' ')}`, 4000)
+
+  /** Asks a question the agent reads the open page for; its answer stops partway until the returned function is called. */
+  async function askAndHoldReply(browser: FakeBrowser, user: UserEvent, question: string) {
+    browser.ai.script.push({ toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] })
+    const resume = pausedAfterTools(browser, 'Alice owns the launch')
+    await ask(user, question)
+    await screen.findByText(/^Alice owns/)
+    return () => {
+      resume()
+      browser.ai.pause = undefined
+    }
+  }
+
+  it('[UC-NOTICO-SESSION-001-S08] switching sessions stops a question, which keeps the tools it used in the session it was asked in', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' })
     await ask(user, 'What is on the roadmap?')
     await screen.findByText('Three milestones.')
     await answered()
-
     vi.setSystemTime(new Date(START.getTime() + 60_000))
     await user.click(screen.getByRole('button', { name: 'New chat' }))
-    const resume = pausedReply(browser, 'Alice owns the launch')
-    await ask(user, 'Who owns the launch?')
-    await screen.findByText(/^Alice owns/)
+    const resume = await askAndHoldReply(browser, user, 'Who owns the launch?')
 
     await openSession(user, /What is on the roadmap\?/)
 
-    // The earlier session is on screen, ready for a question, without the reply that was coming in.
+    // The earlier session is on screen, ready for a question, with nothing of the one that was stopped.
     expect(await screen.findByText('Three milestones.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Send' })).toBeVisible()
     expect(screen.queryByText(/Alice owns/)).not.toBeInTheDocument()
     expect(screen.queryByText('Who owns the launch?')).not.toBeInTheDocument()
+    expect(toolsSaid()).toEqual([])
 
     // Whatever the model still writes for the stopped question goes nowhere.
     resume()
-    browser.ai.pause = undefined
+    vi.setSystemTime(new Date(START.getTime() + 120_000))
     browser.ai.script.push({ reply: 'In March.' })
     await ask(user, 'When is the first one?')
     expect(await screen.findByText('In March.')).toBeVisible()
@@ -1231,10 +1259,160 @@ describe('sessions', () => {
     expect(screen.queryByText(/Alice owns/)).not.toBeInTheDocument()
     expect(JSON.stringify(browser.sentToModel())).not.toContain('launch')
 
-    // The stopped question left no session behind either.
+    // The session the question was asked in was saved with it, under the question: a stopped
+    // question asks the model for no title.
     await user.click(screen.getByRole('button', { name: 'Chats' }))
-    expect(await screen.findByRole('button', { name: /What is on the roadmap\?/ })).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Who owns the launch\?/ })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(listed()).toEqual([
+        expect.stringMatching(/^What is on the roadmap\?/),
+        expect.stringMatching(/^Who owns the launch\?/),
+      ]),
+    )
+    expect(JSON.stringify(browser.titles.calls)).not.toContain('launch')
+
+    // Reopened, it shows the question and the page it read, without the reply that was cut off.
+    await user.click(sessionList().getByRole('button', { name: /Who owns the launch\?/ }))
+    expect(await conversation().findByText('Who owns the launch?')).toBeVisible()
+    expect(toolsSaid()).toEqual(['Read Fixture page'])
+    expect(screen.queryByText(/Alice owns/)).not.toBeInTheDocument()
+
+    // A follow-up tells the model what the stopped question already did.
+    browser.ai.script.push({ reply: 'Alice.' })
+    await ask(user, 'So who is it?')
+    expect(await screen.findByText('Alice.')).toBeVisible()
+    await answered()
+    expect(browser.sentToModel()).toMatchObject([
+      { role: 'system' },
+      { role: 'user', content: expect.stringContaining('Who owns the launch?') },
+      { role: 'assistant', tool_calls: [{ function: { name: 'read_page' } }] },
+      { role: 'tool', content: expect.stringContaining('Hello **bold**') },
+      { role: 'user', content: expect.stringContaining('So who is it?') },
+    ])
+  })
+
+  it('[UC-NOTICO-SESSION-001-S21] a new chat stops a question, which keeps the change it made in the session it was asked in', async () => {
+    const { tab } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: PAGE }) }] },
+      {
+        toolCalls: [
+          {
+            name: 'edit_page',
+            arguments: JSON.stringify({
+              page: PAGE,
+              edits: [{ action: 'insert', position: 'end', markdown: 'A new line' }],
+            }),
+          },
+        ],
+      },
+    )
+    const resume = pausedAfterTools(browser, 'Added the line to it.')
+    await ask(user, 'Add a line')
+    await screen.findByText(/^Added the/)
+
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+
+    // The new chat is empty and takes a question at once.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^New chat$/)
+    expect(screen.queryByText('Add a line')).not.toBeInTheDocument()
+    expect(toolsSaid()).toEqual([])
+    resume()
+    browser.ai.pause = undefined
+    browser.ai.script.push({ reply: 'Fresh.' })
+    await ask(user, 'Hello')
+    expect(await screen.findByText('Fresh.')).toBeVisible()
+    await answered()
+    expect(browser.sentToModel().map((m) => m.role)).toEqual(['system', 'user'])
+    expect(JSON.stringify(browser.sentToModel())).not.toContain('Add a line')
+
+    // The session the user left is in the list, with the question and what it read and changed.
+    await openSession(user, /Add a line/)
+    expect(await conversation().findByText('Add a line')).toBeVisible()
+    expect(toolsSaid()).toEqual(['Read Fixture page', 'Edited Fixture page'])
+    expect(screen.queryByText(/Added the/)).not.toBeInTheDocument()
+
+    // Continued, the model learns the line is already there.
+    browser.ai.script.push({ reply: 'Yes, once.' })
+    await ask(user, 'Did you add it?')
+    expect(await screen.findByText('Yes, once.')).toBeVisible()
+    await answered()
+    expect(browser.sentToModel()).toMatchObject([
+      { role: 'system' },
+      { role: 'user', content: expect.stringContaining('Add a line') },
+      { role: 'assistant', tool_calls: [{ function: { name: 'read_page' } }] },
+      { role: 'tool' },
+      { role: 'assistant', tool_calls: [{ function: { name: 'edit_page' } }] },
+      { role: 'tool' },
+      { role: 'user', content: expect.stringContaining('Did you add it?') },
+    ])
+  })
+
+  it('[UC-NOTICO-SESSION-001-S22] a question that used no tool when the user leaves its session leaves that session as it was', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Three milestones.' })
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText('Three milestones.')
+    await answered()
+
+    // The first question of a new chat, left for a saved one: the chat it would have started is not kept.
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    let resume = pausedReply(browser, 'Alice owns the launch')
+    await ask(user, 'Who owns the launch?')
+    await screen.findByText(/^Alice owns/)
+    await openSession(user, /What is on the roadmap\?/)
+    expect(await screen.findByText('Three milestones.')).toBeVisible()
+    resume()
+
+    // A follow-up in the saved chat, left for a new one: the chat keeps only what it had.
+    resume = pausedReply(browser, 'In March or so')
+    await ask(user, 'When is the first one?')
+    await screen.findByText(/^In March/)
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    resume()
+    browser.ai.pause = undefined
+
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    await waitFor(() => expect(listed()).toEqual([expect.stringMatching(/^What is on the roadmap\?/)]))
+    await user.click(sessionList().getByRole('button', { name: /What is on the roadmap\?/ }))
+    expect(await screen.findByText('Three milestones.')).toBeVisible()
+    expect(screen.queryByText('When is the first one?')).not.toBeInTheDocument()
+    browser.ai.script.push({ reply: 'Alice.' })
+    await ask(user, 'Who leads it?')
+    expect(await screen.findByText('Alice.')).toBeVisible()
+    await answered()
+    expect(browser.sentToModel().map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user'])
+    expect(JSON.stringify(browser.sentToModel())).not.toMatch(/launch|first one/)
+  })
+
+  it('a chat deleted while a question the user left it for is still stopping is not saved back', async () => {
+    const { browser, user } = await openPanel()
+    await askAboutPage(browser, user)
+
+    // The follow-up reads the page again, and Notion has not answered yet when the user leaves.
+    const release = browser.tab.hold('loadPageChunk')
+    browser.ai.script.push({ toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] })
+    const sent = browser.tab.sent.length
+    await ask(user, 'Read it again')
+    await waitFor(() => expect(browser.tab.sent.length).toBeGreaterThan(sent))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete chat' }))
+    await user.click(screen.getByRole('button', { name: 'Delete?' }))
+    await waitFor(() => expect(listed()).toEqual([]))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    // Notion answers, the question ends, and the new chat is used meanwhile.
+    await act(async () => release())
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    browser.ai.script.push({ reply: 'Fresh.' })
+    await ask(user, 'Hello')
+    expect(await screen.findByText('Fresh.')).toBeVisible()
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    await waitFor(() => expect(listed()).toEqual([expect.stringMatching(/^Hello/)]))
   })
 })
 

@@ -182,6 +182,9 @@ export function Chat({ userId }: { userId: string }) {
   const deleted = useRef(new Set<string>())
   // The save in progress, if any; the next one waits for it.
   const saving = useRef(Promise.resolve())
+  // Settles once every question asked so far has ended and its save, if it has one, is in `saving`:
+  // also a question of a chat the user has left, which ends on its own time.
+  const asking = useRef(Promise.resolve())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   // Which model answers: read once for this account, then changed on the settings page. Each
@@ -628,8 +631,12 @@ export function Chat({ userId }: { userId: string }) {
         })
     }
 
-    const before = agent.history().length
+    // The conversation with this question in it, once it ended, if the question is part of it.
+    let conversation: HistoryMessage[] | undefined
     let answered = false
+    let ended!: () => void
+    const earlier = asking.current
+    asking.current = new Promise<void>((resolve) => (ended = resolve)).then(() => earlier)
     try {
       // A page search still out goes first: Notion is asked one thing at a time. If it was turned
       // away, so is the question, which sends nothing; and so it does when the user stopped it, or
@@ -655,6 +662,7 @@ export function Chat({ userId }: { userId: string }) {
       const askedWith = answering(modelRef.current ?? (await modelLoad))
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
       answered = result.status === 'done'
+      conversation = result.conversation
       const { requests, tokens, model, cost } = result
       updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
       if (result.status === 'stopped') {
@@ -678,20 +686,23 @@ export function Chat({ userId }: { userId: string }) {
       void readCredits()
       // Another session that opened meanwhile already unlocked the composer, and the agent holds
       // that session now.
-      if (chatId.current === id) {
-        setBusy(false)
-        // A question that failed or was stopped before using a tool leaves the conversation as it
-        // was; don't move the session to the top of the list for it. One that used tools keeps them.
-        const messages = agent.history()
-        if (messages.length !== before) {
-          // One at a time: each save starts from the `updatedAt` the one before it stored.
-          saving.current = saving.current.then(() => save(session, messages, id, reply))
-        }
-        if (answered && !session.titled) {
+      const here = chatId.current === id
+      if (here) setBusy(false)
+      // A question that failed or was stopped before using a tool leaves the conversation as it
+      // was; don't move the session to the top of the list for it. One that used tools keeps them,
+      // in the session it was asked in: leaving that session stopped the question like Stop does, and
+      // what it already did there must not be done again when the session is continued.
+      if (conversation) {
+        const messages = conversation
+        // One at a time: each save starts from the `updatedAt` the one before it stored.
+        saving.current = saving.current.then(() => save(session, messages, id, reply))
+        // Only for the open session: the agent asks the model it holds, which is that session's.
+        if (here && answered && !session.titled) {
           session.titled = true
           void title(session, messages)
         }
       }
+      ended()
     }
   }
 
@@ -753,7 +764,10 @@ export function Chat({ userId }: { userId: string }) {
     })
   }
 
-  /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
+  /**
+   * Switches to a new session, or to a saved one. A question still being answered is stopped, as Stop
+   * stops it, and saved to the session it was asked in when it has ended (see `send`).
+   */
   function switchTo(session?: Session) {
     chatId.current++
     // A failed save's message belongs to the chat it was for.
@@ -811,7 +825,10 @@ export function Chat({ userId }: { userId: string }) {
     declineAll()
     stopped.current++
     agent.stop()
-    // A save of this panel's still waiting to write would otherwise look like another window's later.
+    // The stopped question is saved to the session it was asked in, which may be this one (the user
+    // went from it to a new chat, and back). That save, like any of this panel's still waiting to
+    // write, would otherwise look like another window's later, and the session would open without it.
+    await asking.current
     await saving.current
     const session = await store.get(id)
     if (overtaken()) return 'opened'
@@ -1090,7 +1107,7 @@ export function Chat({ userId }: { userId: string }) {
             onClose={closeList}
             onDeleted={(id) => {
               deleted.current.add(id)
-              // The open session is being deleted: stop its reply, so it isn't saved back.
+              // The open session is being deleted: stop its reply. No save brings the session back.
               if (id !== current?.id) return
               switchTo()
               setView('sessions')
