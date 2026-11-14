@@ -1,5 +1,5 @@
-// The history of a user's own credits, as the side panel reads it when the user opens it
-// (GET /v1/credits/grants and GET /v1/credits/usage): tested through HTTP, with a clock the tests
+// The history of a user's own credits, the grants they were given, as the side panel reads it when
+// the user opens it (GET /v1/credits/grants): tested through HTTP, with a clock the tests
 // move and the worker's real SQL on SQLite.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
@@ -97,14 +97,11 @@ async function allGrantPages(bearer: string): Promise<any[][]> {
   return pages
 }
 
-const at = (time: string) => {
-  clock = new Date(time)
-}
 const later = (ms: number) => {
   clock = new Date(clock.getTime() + ms)
 }
 
-describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CREDITS-002 read only one’s own', () => {
+describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC-COFUN-CREDITS-002 read only one’s own', () => {
   it('[UC-NOTICO-CHAT-003-S10] a user sees every grant they were given, newest first, with what went unspent of the expired ones', async () => {
     // Week one: 60 of the free credits are spent, and 140 expire unspent.
     await ask(alice, 60)
@@ -194,116 +191,8 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CRE
     expect(second.next).toBeNull()
   })
 
-  it('[UC-NOTICO-CHAT-003-S11] a user reads the credits they used per day further back, a period at a time, to the end', async () => {
-    at('2026-08-01T23:30:00Z')
-    await ask(alice, 30)
-    at('2026-08-02T00:30:00Z')
-    await ask(alice, 60)
-    at('2026-10-01T10:00:00Z')
-    await ask(alice, 6)
-    at('2026-11-08T12:00:00Z')
-    await ask(alice, 30)
-    at('2026-11-10T09:00:00Z')
-
-    // The most recent period is the 30 days GET /v1/credits reports.
-    const recent = await get('/v1/credits/usage', alice)
-    expect(recent).toEqual({
-      from: '2026-10-12',
-      to: '2026-11-10',
-      byDay: [{ day: '2026-11-08', microCredits: 30 * CREDIT }],
-      // The day after the latest call before this period: the weeks without a call are skipped.
-      earlier: '2026-10-02',
-    })
-    expect(recent.byDay).toEqual((await get('/v1/credits', alice)).usage.byDay)
-
-    const october = await get(`/v1/credits/usage?before=${recent.earlier}`, alice)
-    expect(october).toEqual({
-      from: '2026-09-02',
-      to: '2026-10-01',
-      byDay: [{ day: '2026-10-01', microCredits: 6 * CREDIT }],
-      earlier: '2026-08-03',
-    })
-
-    expect(await get(`/v1/credits/usage?before=${october.earlier}`, alice)).toEqual({
-      from: '2026-07-04',
-      to: '2026-08-02',
-      byDay: [
-        { day: '2026-08-02', microCredits: 60 * CREDIT },
-        { day: '2026-08-01', microCredits: 30 * CREDIT },
-      ],
-      earlier: null,
-    })
-  })
-
-  it('[UC-NOTICO-CHAT-003-S11] days further back are days on the user’s own clock too', async () => {
-    at('2026-08-01T23:30:00Z')
-    await ask(alice, 30)
-    at('2026-08-02T00:30:00Z')
-    await ask(alice, 60)
-    at('2026-11-10T09:00:00Z')
-
-    // An hour ahead of UTC, 23:30 on the 1st is already the 2nd.
-    const ahead = await get('/v1/credits/usage?utc_offset=60', alice)
-    expect(ahead.earlier).toBe('2026-08-03')
-    expect((await get(`/v1/credits/usage?utc_offset=60&before=${ahead.earlier}`, alice)).byDay).toEqual([
-      { day: '2026-08-02', microCredits: 90 * CREDIT },
-    ])
-    // An hour behind, 00:30 on the 2nd is still the 1st.
-    const behind = await get('/v1/credits/usage?utc_offset=-60', alice)
-    expect(behind.earlier).toBe('2026-08-02')
-    expect(await get(`/v1/credits/usage?utc_offset=-60&before=${behind.earlier}`, alice)).toEqual({
-      from: '2026-07-03',
-      to: '2026-08-01',
-      byDay: [{ day: '2026-08-01', microCredits: 90 * CREDIT }],
-      earlier: null,
-    })
-  })
-
-  it('a period ends the day before `before`, and each call falls in exactly one period', async () => {
-    at('2026-10-11T23:59:59Z')
-    await ask(alice, 30)
-    at('2026-10-12T00:00:00Z')
-    await ask(alice, 60)
-    at('2026-11-10T09:00:00Z')
-
-    // The most recent 30 days start on October 12.
-    expect((await get('/v1/credits/usage', alice)).byDay).toEqual([{ day: '2026-10-12', microCredits: 60 * CREDIT }])
-    expect((await get('/v1/credits/usage?before=2026-10-12', alice)).byDay).toEqual([
-      { day: '2026-10-11', microCredits: 30 * CREDIT },
-    ])
-    // A period can end on any day.
-    expect(await get('/v1/credits/usage?before=2026-10-13', alice)).toMatchObject({
-      from: '2026-09-13',
-      to: '2026-10-12',
-      byDay: [
-        { day: '2026-10-12', microCredits: 60 * CREDIT },
-        { day: '2026-10-11', microCredits: 30 * CREDIT },
-      ],
-      earlier: null,
-    })
-  })
-
-  it('a call that cost nothing can lead to a period with no usage', async () => {
-    at('2026-08-01T10:00:00Z')
-    ai.failWith = new Error('capacity')
-    expect(
-      (await req('POST', '/v1/chat/completions', alice, { messages: [{ role: 'user', content: 'hi' }] })).status,
-    ).toBe(502)
-    at('2026-11-10T09:00:00Z')
-
-    const recent = await get('/v1/credits/usage', alice)
-    expect(recent).toMatchObject({ byDay: [], earlier: '2026-08-02' })
-    expect(await get(`/v1/credits/usage?before=${recent.earlier}`, alice)).toMatchObject({ byDay: [], earlier: null })
-  })
-
   it('a user who was given nothing and used nothing has an empty history, and reading it writes nothing', async () => {
     expect(await get('/v1/credits/grants', alice)).toEqual({ grants: [], next: null })
-    expect(await get('/v1/credits/usage', alice)).toEqual({
-      from: '2026-10-10',
-      to: '2026-11-08',
-      byDay: [],
-      earlier: null,
-    })
     // Looking at the history does not start the week of free credits.
     expect(db.rows('grants')).toEqual([])
     expect(db.rows('model_calls')).toEqual([])
@@ -315,8 +204,7 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CRE
 
     later(WEEK_MS + HOUR_MS)
     await get('/v1/credits/grants', alice)
-    await get('/v1/credits/usage?utc_offset=480', alice)
-    await get('/v1/credits/usage?before=2026-11-01', alice)
+    await get(`/v1/credits/grants?before=${START}.0`, alice)
 
     expect([db.rows('grants'), db.rows('model_calls')]).toEqual(before)
   })
@@ -333,11 +221,6 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CRE
       { ...free, left: 194 * CREDIT, grantedAt: START + 40 * DAY_MS },
       { ...free, left: 170 * CREDIT, grantedAt: START },
     ])
-    const usage = await get('/v1/credits/usage', bob)
-    expect(usage).toMatchObject({ byDay: [{ day: '2026-12-18', microCredits: 6 * CREDIT }], earlier: '2026-11-09' })
-    expect((await get(`/v1/credits/usage?before=${usage.earlier}`, bob)).byDay).toEqual([
-      { day: '2026-11-08', microCredits: 30 * CREDIT },
-    ])
 
     // A place in another user's history leads into the caller's own, and there is no way to name another account.
     const { next } = await get('/v1/credits/grants', alice)
@@ -345,10 +228,8 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CRE
     // Alice's place is past her 20 newest grants of that moment; Bob has one, so nothing of his is left, and nothing of hers shows.
     expect(await get(`/v1/credits/grants?before=${next}`, bob)).toEqual({ grants: [], next: null })
     expect((await get('/v1/credits/grants?user_id=user_alice', bob)).grants).toHaveLength(2)
-    expect((await get('/v1/credits/usage?user_id=user_alice', bob)).byDay).toEqual(usage.byDay)
     // Nobody's history without a session.
     expect((await req('GET', '/v1/credits/grants')).status).toBe(401)
-    expect((await req('GET', '/v1/credits/usage')).status).toBe(401)
   })
 
   it('a place in the grants that no page gave is refused', async () => {
@@ -360,41 +241,16 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CRE
     expect((await req('GET', '/v1/credits/grants?before=1762603200000.0', alice)).status).toBe(200)
   })
 
-  it('a period of usage that does not end before a date, or an offset that is not one, is refused', async () => {
-    for (const bad of ['abc', '', '2026-02-30', '2026-13-01', '1999-12-31', '20261108', '2026-11-08T00:00:00Z']) {
-      const res = await req('GET', `/v1/credits/usage?before=${bad}`, alice)
-      const body: any = await res.json()
-      expect([bad, res.status, body.error?.message]).toEqual([bad, 400, 'before must be a date like 2026-11-12'])
-    }
-    for (const bad of ['abc', '1.5', '900', '-721']) {
-      const res = await req('GET', `/v1/credits/usage?utc_offset=${bad}`, alice)
-      const body: any = await res.json()
-      expect([bad, res.status, body.error?.message]).toEqual([
-        bad,
-        400,
-        'utc_offset must be a whole number of minutes from -720 to 840',
-      ])
-    }
-    // A period that has not begun yet is empty, and leads back to the user's usage.
-    await ask(alice, 30)
-    expect(await get('/v1/credits/usage?before=2099-12-31&utc_offset=840', alice)).toMatchObject({
-      byDay: [],
-      earlier: '2026-11-10',
-    })
-  })
-
   it('a history that cannot be read is reported as unavailable, and the failure is logged', async () => {
     db.failWith = new Error('D1_ERROR: Network connection lost.')
 
-    for (const path of ['/v1/credits/grants', '/v1/credits/usage']) {
-      const res = await req('GET', path, alice)
-      expect(res.status).toBe(503)
-      expect(((await res.json()) as any).error.code).toBe('credits_unavailable')
-    }
-    expect(logged).toEqual(Array(2).fill('credit read failed: Error: D1_ERROR: Network connection lost.'))
+    const res = await req('GET', '/v1/credits/grants', alice)
+    expect(res.status).toBe(503)
+    expect(((await res.json()) as any).error.code).toBe('credits_unavailable')
+    expect(logged).toEqual(['credit read failed: Error: D1_ERROR: Network connection lost.'])
   })
 
-  it('each page of the history is read through an index, without sorting or reading the whole table', async () => {
+  it('each page of grants is read through an index, without sorting or reading the whole table', async () => {
     const plan = (sql: string, ...values: (string | number)[]) =>
       db.sqlite
         .prepare(`EXPLAIN QUERY PLAN ${sql}`)
@@ -410,12 +266,5 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CRE
     )
     expect(grants).toContain('USING INDEX grants_by_user_granted (user_id=? AND granted_at<?)')
     expect(grants).not.toMatch(/TEMP B-TREE|SCAN/)
-
-    const lastCall = plan(
-      `SELECT max(started_at) AS at FROM model_calls WHERE user_id = ? AND started_at < ?`,
-      'user_alice',
-      START,
-    )
-    expect(lastCall).toContain('USING COVERING INDEX model_calls_by_user (user_id=? AND started_at<?)')
   })
 })

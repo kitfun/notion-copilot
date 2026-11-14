@@ -1,7 +1,7 @@
 // How the panel reads and words credits the worker reports, where the whole panel cannot show it:
 // the tests' worker never names a source of credits the panel does not know.
 import { describe, expect, it } from 'vitest'
-import { Credits, GrantsPage, sourceText } from '../src/credits'
+import { Credits, GrantsPage, grantTitle } from '../src/credits'
 
 describe('a source of credits the panel does not know yet', () => {
   const grant = { source: 'subscription', amount: 5_000_000_000, left: 1_000_000, grantedAt: 1, expiresAt: 2 }
@@ -18,9 +18,9 @@ describe('a source of credits the panel does not know yet', () => {
   })
 
   it('is shown as plain credits, beside the sources the panel words', () => {
-    expect(['free', 'manual', 'subscription'].map(sourceText)).toEqual([
+    expect(['free', 'manual', 'subscription'].map((source) => grantTitle({ ...grant, source }))).toEqual([
       'Free weekly credits',
-      'Added credits',
+      'Credits from Cofun',
       'Credits',
     ])
   })

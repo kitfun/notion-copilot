@@ -6,7 +6,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits, GrantsPage, Packs, UsagePeriod } from '../credits'
+import { Credits, GrantsPage, Packs } from '../credits'
 import { HOSTED_ONLY, ownSetup, type OwnSetup } from '../models'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
@@ -621,15 +621,7 @@ export class CopilotAgent {
     return readOwn(this.config, 'credits/grants', { before }, GrantsPage)
   }
 
-  /**
-   * Credits used per day over one period: the most recent one, or the one that ends before the day
-   * `before` (the `earlier` of the period after it). Read only when the user opens the history.
-   */
-  async creditUsage(before?: string): Promise<UsagePeriod> {
-    return readOwn(this.config, 'credits/usage', { utc_offset: utcOffset(), before }, UsagePeriod)
-  }
-
-  /** The packs of credits on offer. Read when the settings page opens. */
+  /** The packs of credits on offer. Read when the Credits page opens. */
   async creditPacks(): Promise<Packs> {
     return readOwn(this.config, 'billing/packs', {}, Packs)
   }

@@ -1,5 +1,6 @@
-// The signed-in user's credits as the worker reports them (GET /v1/credits, and their history from
-// GET /v1/credits/grants and GET /v1/credits/usage), and how the side panel words them. The request itself is made by the agent (agent/worker.ts), like every call to the worker.
+// The signed-in user's credits as the worker reports them (GET /v1/credits, and the grants they were
+// given from GET /v1/credits/grants), and how the side panel words them. The request itself is made
+// by the agent (agent/worker.ts), like every call to the worker.
 import { z } from './zod'
 
 /** The worker's amounts are micro-credits; the panel shows whole credits. */
@@ -49,6 +50,8 @@ export const GrantsPage = z.object({
       left: z.int().min(0),
       grantedAt: z.int(),
       expiresAt: z.int(),
+      /** For a purchase: what it cost, in US cents. */
+      usdCents: z.int().min(0).optional(),
       /**
        * For a purchase that was taken back: why (`refund`, `dispute`, or one a newer worker names).
        * It ended at `expiresAt`, and `left` is what was taken back.
@@ -61,16 +64,6 @@ export const GrantsPage = z.object({
 })
 export type GrantsPage = z.infer<typeof GrantsPage>
 export type PastGrant = GrantsPage['grants'][number]
-
-/** Credits used per day over one period, from `from` to `to`, newest first. */
-export const UsagePeriod = z.object({
-  from: Day,
-  to: Day,
-  byDay: z.array(DayUsage),
-  /** The day to ask for the period before, where the user's earlier usage is; null when there is none. */
-  earlier: Day.nullable(),
-})
-export type UsagePeriod = z.infer<typeof UsagePeriod>
 
 /**
  * The packs of credits on sale, smallest first, as the worker sells them: each a quantity of 1,000
@@ -116,16 +109,6 @@ export function creditsText(micro: number): string {
   return `${whole} ${whole === '1' || whole === 'less than 1' ? 'credit' : 'credits'}`
 }
 
-/** A grant's source in words. One the panel does not know is plain "Credits". */
-export const sourceText = (source: string) =>
-  source === 'free'
-    ? 'Free weekly credits'
-    : source === 'manual'
-      ? 'Added credits'
-      : source === 'purchase'
-        ? 'Purchased credits'
-        : 'Credits'
-
 const WHEN = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const WHEN_YEAR = new Intl.DateTimeFormat('en', {
   year: 'numeric',
@@ -134,46 +117,37 @@ const WHEN_YEAR = new Intl.DateTimeFormat('en', {
   hour: 'numeric',
   minute: '2-digit',
 })
+const DATE = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' })
+const DATE_YEAR = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
 const DAY = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
+const DAY_SHORT = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+const thisYear = (ms: number) => new Date(ms).getFullYear() === new Date().getFullYear()
 
 /**
  * A moment on the user's own clock, to the minute: "Nov 15, 12:00 PM", with the year when it is not
- * this year's (purchased credits last a year): "Nov 8, 2027, 5:30 PM".
+ * this year's (bought credits last a year): "Nov 8, 2027, 5:30 PM".
  */
-export const when = (ms: number) =>
-  (new Date(ms).getFullYear() === new Date().getFullYear() ? WHEN : WHEN_YEAR).format(ms)
+export const when = (ms: number) => (thisYear(ms) ? WHEN : WHEN_YEAR).format(ms)
 
-/** A day of usage (`YYYY-MM-DD`, already the user's own day) as a date: "Sun, Nov 8". */
-export const dayText = (day: string) => DAY.format(new Date(`${day}T00:00:00Z`))
+/** The day of a moment on the user's own clock: "Nov 15", with the year when it is not this year's: "Nov 8, 2027". */
+const dateText = (ms: number) => (thisYear(ms) ? DATE : DATE_YEAR).format(ms)
 
-const DATE = { month: 'short', day: 'numeric', year: 'numeric' } as const
-const DATE_LOCAL = new Intl.DateTimeFormat('en', DATE)
-const DATE_OF_DAY = new Intl.DateTimeFormat('en', { ...DATE, timeZone: 'UTC' })
-const WEEKDAY_OF_DAY = new Intl.DateTimeFormat('en', { ...DATE, weekday: 'short', timeZone: 'UTC' })
+/** A day of usage (`YYYY-MM-DD`, already the user's own day) as a date: "Sun, Nov 8", or shorter, "Nov 8". */
+export const dayText = (day: string, short = false) => (short ? DAY_SHORT : DAY).format(new Date(`${day}T00:00:00Z`))
 
-// The history reaches back past the current year, so its dates name the year.
+/** A day on the user's own clock as the worker writes days: `YYYY-MM-DD`. */
+function dayOf(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
 
-/** The day of a moment on the user's own clock: "Nov 15, 2026". */
-const dateText = (ms: number) => DATE_LOCAL.format(ms)
-
-/** A day (`YYYY-MM-DD`) as a date with its year: "Nov 8, 2026", or with the weekday, "Sun, Nov 8, 2026". */
-export const dayDateText = (day: string, weekday = false) =>
-  (weekday ? WEEKDAY_OF_DAY : DATE_OF_DAY).format(new Date(`${day}T00:00:00Z`))
-
-/**
- * A grant's dates and what became of it, at the time `now`: the day it was given, then the day it
- * expires with what is left, or the day it expired with what went unspent.
- */
-export function grantDatesText({ grantedAt, expiresAt, left, revoked }: PastGrant, now: number): string {
-  const given = `Given ${dateText(grantedAt)}`
-  if (revoked !== undefined) {
-    const why = revoked === 'refund' ? 'refunded' : revoked === 'dispute' ? 'disputed' : 'taken back'
-    return `${given} · ${why} ${dateText(expiresAt)}${left > 0 ? `, ${creditsText(left)} taken back` : ''}`
-  }
-  if (expiresAt > now) {
-    return `${given} · ${left > 0 ? `${wholeCredits(left)} left, expire` : 'used up, until'} ${dateText(expiresAt)}`
-  }
-  return `${given} · expired ${dateText(expiresAt)}${left > 0 ? ` with ${creditsText(left)} unspent` : ''}`
+/** The last `days` days on the user's own clock, oldest first, ending with the day of `now`. */
+export function lastDays(now: number, days: number): string[] {
+  const today = new Date(now)
+  return Array.from({ length: days }, (_, i) =>
+    dayOf(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1 - i))),
+  )
 }
 
 /** How long free credits last, in days. */
@@ -182,33 +156,55 @@ export const daysText = (ms: number) => {
   return days === 1 ? '1 day' : `${days} days`
 }
 
-/** The credits in two lines, as the account menu shows them: what is left, then the date that matters next. */
-export function creditsSummary({ balance, free, grants }: Credits): { left: string; detail: string } {
-  if (balance <= 0) {
-    return {
-      left: 'No credits left',
-      detail: free.started
-        ? `Free credits arrive with your first question after ${when(free.until)}`
-        : 'Your next free credits go to what you overspent',
-    }
-  }
-  const left = `${creditsText(balance)} left`
-  const spendable = grants.filter((grant) => grant.left > 0)
-  if (!free.started) {
-    // Free credits that have not started, alone or beside credits that have.
-    const detail =
-      spendable.length && free.toCome > 0
-        ? `${creditsText(free.toCome)} of them start with your next question`
-        : `Valid for ${daysText(free.lastsMs)} from your next question`
-    return { left, detail }
-  }
+/** What is left of the grants that still count from `source`. */
+export const leftFrom = ({ grants }: Credits, source: string) =>
+  grants.filter((grant) => grant.source === source).reduce((sum, grant) => sum + grant.left, 0)
+
+/**
+ * What is left of the grants from `source`, with when the first of them expires: "5,000 · expire
+ * Nov 8, 2027", or with several, how many of them expire then: "10,000 · 5,000 expire Nov 8, 2027".
+ */
+export function sourceLeftText(credits: Credits, source: string): string {
+  const left = leftFrom(credits, source)
+  const spendable = credits.grants.filter((grant) => grant.source === source && grant.left > 0)
   const [first] = spendable
-  if (!first) return { left, detail: '' }
-  return {
-    left,
-    detail:
-      spendable.length === 1
-        ? `Expire ${when(first.expiresAt)}`
-        : `${creditsText(first.left)} expire ${when(first.expiresAt)}`,
+  if (!first) return wholeCredits(left)
+  // What expires first: the first grant, and any that expire at the same moment.
+  const soonest = spendable.filter((grant) => grant.expiresAt === first.expiresAt).reduce((sum, g) => sum + g.left, 0)
+  return `${wholeCredits(left)} · ${soonest === left ? '' : `${wholeCredits(soonest)} `}expire ${when(first.expiresAt)}`
+}
+
+/** A grant of the history in words: "Free weekly credits", "Bought 5,000 credits". One the panel does not know is plain "Credits". */
+export function grantTitle({ source, amount }: PastGrant): string {
+  if (source === 'free') return 'Free weekly credits'
+  if (source === 'manual') return 'Credits from Cofun'
+  if (source === 'purchase') return `Bought ${creditsText(amount)}`
+  return 'Credits'
+}
+
+/**
+ * A grant's dates, at the time `now`: the day it was given, what a purchase cost, and the day it
+ * expires, expired, or was taken back.
+ */
+export function grantDatesText({ grantedAt, expiresAt, usdCents, revoked }: PastGrant, now: number): string {
+  const parts = [dateText(grantedAt)]
+  if (usdCents !== undefined) parts.push(`Paid ${usdText(usdCents)}`)
+  if (revoked !== undefined) {
+    parts.push(
+      `${revoked === 'refund' ? 'refunded' : revoked === 'dispute' ? 'disputed' : 'taken back'} ${dateText(expiresAt)}`,
+    )
+  } else {
+    parts.push(`${expiresAt > now ? 'expire' : 'expired'} ${dateText(expiresAt)}`)
   }
+  return parts.join(' · ')
+}
+
+/**
+ * What became of a grant, at the time `now`: what is left of it, what went unspent when it expired,
+ * or what was taken back. `taken` marks the last, which the history shows as a loss.
+ */
+export function grantLeftText({ left, expiresAt, revoked }: PastGrant, now: number): { text: string; taken?: true } {
+  if (left === 0) return { text: 'All used' }
+  if (revoked !== undefined) return { text: `${wholeCredits(left)} taken back`, taken: true }
+  return { text: `${wholeCredits(left)} ${expiresAt > now ? 'left' : 'unspent'}` }
 }

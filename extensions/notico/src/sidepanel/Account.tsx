@@ -1,6 +1,7 @@
 import { useAuth, useUser } from '@clerk/chrome-extension'
 import { useState, type Ref } from 'react'
-import { creditsSummary, type CreditsState } from '../credits'
+import { wholeCredits, type CreditsState } from '../credits'
+import { Icon } from './icons'
 import { useMenu } from './menu'
 
 /** Who is signed in, as Clerk knows them. Notico only shows it: there is nothing here to change the account. */
@@ -24,40 +25,43 @@ export function Avatar({ name, imageUrl }: { name: string; imageUrl: string }) {
   )
 }
 
-/** The credits in the account menu: what is left, and the date that matters next. */
-function CreditsLines({ state }: { state: CreditsState }) {
-  if (state.status === 'loading') return <p className="account-detail">Loading credits…</p>
-  if (state.status === 'unavailable') return <p className="account-detail">Credits unavailable</p>
-  const { left, detail } = creditsSummary(state.credits)
-  return (
-    <>
-      <p className="account-credits">{left}</p>
-      {detail && <p className="account-detail">{detail}</p>}
-    </>
-  )
+/** The balance on the Credits item: whole credits, nothing while it loads, and that it is unavailable when the read failed. */
+function balanceOf(state: CreditsState): { shown: string; spoken: string } {
+  if (state.status === 'loading') return { shown: '', spoken: 'Credits' }
+  if (state.status === 'unavailable') return { shown: 'Unavailable', spoken: 'Credits, unavailable' }
+  const left = wholeCredits(Math.max(state.credits.balance, 0))
+  return { shown: left, spoken: `Credits, ${left} left` }
 }
 
 /**
- * The avatar in the header and the menu it opens: who is signed in, their credits, "Settings", and
- * "Sign out". The panel's own, in place of Clerk's user menu: Notico offers no account management.
+ * The avatar in the header and the menu it opens: who is signed in, then Credits (with the balance)
+ * and Settings, each opening its page, and Sign out. The panel's own, in place of Clerk's user menu:
+ * Notico offers no account management.
  */
 export function AccountMenu({
   credits,
   onOpen,
+  onCredits,
   onSettings,
   buttonRef,
 }: {
   credits: CreditsState
   /** Called each time the menu opens, so the credits in it can be read again. */
   onOpen: () => void
+  onCredits: () => void
   onSettings: () => void
-  /** The avatar button, so whoever closes the settings page can put the focus back on it. */
+  /** The avatar button, so whoever closes a page can put the focus back on it. */
   buttonRef: Ref<HTMLButtonElement>
 }) {
   const { signOut } = useAuth()
   const account = useAccount()
   // Escape and Tab, the arrow keys, and a press elsewhere, as every menu of the panel does.
   const { open, setOpen, rootRef, menuRef, onKeyDown } = useMenu()
+  const balance = balanceOf(credits)
+  const choose = (then: () => void) => () => {
+    setOpen(false)
+    then()
+  }
 
   return (
     <div className="account" ref={rootRef} onKeyDown={onKeyDown}>
@@ -81,23 +85,22 @@ export function AccountMenu({
             <p className="account-name">{account.name}</p>
             {account.email && account.email !== account.name && <p className="account-detail">{account.email}</p>}
           </div>
-          <div className="account-balance" id="account-balance">
-            <CreditsLines state={credits} />
-          </div>
-          {/* Opening moves the focus to the first item: the description tells a screen reader who is signed in and the credits above it. */}
-          <div ref={menuRef} role="menu" aria-label="Account" aria-describedby="account-who account-balance">
-            <button
-              role="menuitem"
-              tabIndex={-1}
-              onClick={() => {
-                setOpen(false)
-                onSettings()
-              }}
-            >
-              Settings
+          {/* Opening moves the focus to the first item: the description tells a screen reader who is signed in. */}
+          <div ref={menuRef} role="menu" aria-label="Account" aria-describedby="account-who">
+            <hr />
+            <button role="menuitem" tabIndex={-1} aria-label={balance.spoken} onClick={choose(onCredits)}>
+              <Icon name="coins" />
+              <span className="grow">Credits</span>
+              <span className="menu-value">{balance.shown}</span>
             </button>
-            <button role="menuitem" tabIndex={-1} onClick={() => void signOut()}>
-              Sign out
+            <button role="menuitem" tabIndex={-1} onClick={choose(onSettings)}>
+              <Icon name="gear" />
+              <span className="grow">Settings</span>
+            </button>
+            <hr />
+            <button role="menuitem" tabIndex={-1} className="quiet" onClick={() => void signOut()}>
+              <Icon name="signOut" />
+              <span className="grow">Sign out</span>
             </button>
           </div>
         </div>

@@ -20,25 +20,35 @@ async function openPanel() {
   return { browser, user: userEvent.setup() }
 }
 
-async function openSettings(user: UserEvent) {
+async function openCredits(user: UserEvent) {
   await user.click(screen.getByRole('button', { name: 'Account' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
-  expect(await screen.findByRole('heading', { name: 'Settings' })).toBeVisible()
+  await user.click(await screen.findByRole('menuitem', { name: /^Credits/ }))
+  expect(await screen.findByRole('heading', { name: 'Credits' })).toBeVisible()
 }
 
-/** A section of the settings page, by its heading. */
+/** The Credits page's balance by source, once the credits have loaded: the text of each line. */
+async function bySource() {
+  const list = await within(section('Balance')).findByRole('list', { name: 'Credits by source' })
+  return within(list)
+    .getAllByRole('listitem')
+    .map((line) => line.textContent)
+}
+
+/** A section of the Credits page, by its heading. */
 const section = (name: string) => screen.getByRole('region', { name })
 
 /** The user comes back to the side panel from another tab. */
 const comeBack = () => fireEvent.focus(window)
 
-describe('buying credits on the settings page', () => {
+describe('buying credits on the Credits page', () => {
   it('[UC-NOTICO-BILLING-001-S01] choosing a pack opens its Checkout page in a new tab, for the signed-in account', async () => {
     const { browser, user } = await openPanel()
-    await openSettings(user)
+    await openCredits(user)
 
     const buy = within(section('Buy credits'))
-    const packs = within(await buy.findByRole('list', { name: 'Packs of credits' })).getAllByRole('button')
+    const packs = within(await buy.findByRole('list', { name: 'Packs of credits' })).getAllByRole('button', {
+      name: /^Buy/,
+    })
     expect(packs.map((pack) => pack.getAttribute('aria-label'))).toEqual([
       'Buy 5,000 credits for US$5',
       'Buy 10,000 credits for US$10',
@@ -55,24 +65,23 @@ describe('buying credits on the settings page', () => {
     expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', quantity: 5, price: 'price_credits' }])
   })
 
-  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year and nothing renews', async () => {
+  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year, nothing renews, and questions answered with the user’s own key spend none', async () => {
     const { user } = await openPanel()
-    await openSettings(user)
+    await openCredits(user)
 
     const buy = within(section('Buy credits'))
     await buy.findByRole('list', { name: 'Packs of credits' })
     expect(
       buy.getByText(
-        'Credits you buy are valid for one year from the day you buy them. A one-time purchase, not a subscription.',
+        'One-time purchase, not a subscription, valid for a year, spent after your free credits. Questions answered with your own key (OpenRouter, DeepSeek) spend no credits. Tax may be added at checkout.',
       ),
     ).toBeVisible()
   })
 
   it('[UC-NOTICO-BILLING-001-S10] coming back to the panel after paying shows the new credits', async () => {
     const { browser, user } = await openPanel()
-    await openSettings(user)
-    const credits = within(section('Credits'))
-    expect(await credits.findByText('200 credits left')).toBeVisible()
+    await openCredits(user)
+    expect(await bySource()).toEqual(['Free this week200 · valid for 7 days from your next question', 'Bought0'])
     await user.click(await screen.findByRole('button', { name: 'Buy 10,000 credits for US$10' }))
     await within(section('Buy credits')).findByRole('status')
 
@@ -80,21 +89,20 @@ describe('buying credits on the settings page', () => {
     await browser.stripeSends()
     comeBack()
 
-    expect(await credits.findByText('10,200 credits left')).toBeVisible()
-    const lots = within(credits.getByRole('list', { name: 'Your credits' })).getAllByRole('listitem')
-    expect(lots.map((lot) => lot.textContent)).toEqual([
-      'Purchased credits10,000 left, expire Nov 8, 2027, 5:30 PM',
-      'Free weekly credits200, not started: valid for 7 days from your next question',
+    expect(await within(section('Balance')).findByText('10,200')).toBeVisible()
+    expect(await bySource()).toEqual([
+      'Free this week200 · valid for 7 days from your next question',
+      'Bought10,000 · expire Nov 8, 2027, 5:30 PM',
     ])
     // The account menu has them too, with no sign-in again.
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.click(screen.getByRole('button', { name: 'Account' }))
-    expect(await screen.findByText('10,200 credits left')).toBeVisible()
+    expect(await screen.findByRole('menuitem', { name: 'Credits, 10,200 left' })).toBeVisible()
   })
 
-  it('[UC-NOTICO-BILLING-001-S11] the history shows a purchase as such, and what a refund took back', async () => {
+  it('[UC-NOTICO-BILLING-001-S11] the history shows a purchase as such, with what was paid, and what a refund took back', async () => {
     const { browser, user } = await openPanel()
-    await openSettings(user)
+    await openCredits(user)
     await user.click(await screen.findByRole('button', { name: 'Buy 5,000 credits for US$5' }))
     await within(section('Buy credits')).findByRole('status')
     await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_kept' }))
@@ -102,16 +110,25 @@ describe('buying credits on the settings page', () => {
     // The second Checkout tab is open before the user pays in it.
     await waitFor(() => expect(browser.openedTabs).toHaveLength(2))
     await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_refunded' }))
+    // A day later, a third: the Credits page says how many of the credits bought expire first.
     vi.setSystemTime(new Date('2026-11-09T12:00:00Z'))
+    await user.click(screen.getByRole('button', { name: 'Buy 5,000 credits for US$5' }))
+    await waitFor(() => expect(browser.openedTabs).toHaveLength(3))
+    await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_later' }))
+    comeBack()
+    await waitFor(async () =>
+      expect((await bySource()).at(-1)).toBe('Bought20,000 · 15,000 expire Nov 8, 2027, 5:30 PM'),
+    )
     await browser.stripeSends(refunded('pi_refunded'))
 
-    await user.click(within(section('Credits')).getByRole('button', { name: 'Credit history' }))
+    await user.click(within(section('Balance')).getByRole('button', { name: 'Credit history' }))
 
-    const given = await within(section('Credits you were given')).findByRole('list')
+    const given = await screen.findByRole('list', { name: 'Credits you were given' })
     const lots = within(given).getAllByRole('listitem')
     expect(lots.map((lot) => lot.textContent)).toEqual([
-      'Purchased credits10,000 creditsGiven Nov 8, 2026 · refunded Nov 9, 2026, 10,000 credits taken back',
-      'Purchased credits5,000 creditsGiven Nov 8, 2026 · 5,000 left, expire Nov 8, 2027',
+      'Bought 5,000 creditsNov 9 · Paid US$5 · expire Nov 9, 2027+5,0005,000 left',
+      'Bought 10,000 creditsNov 8 · Paid US$10 · refunded Nov 9+10,00010,000 taken back',
+      'Bought 5,000 creditsNov 8 · Paid US$5 · expire Nov 8, 2027+5,0005,000 left',
     ])
   })
 
@@ -121,7 +138,7 @@ describe('buying credits on the settings page', () => {
     const packs = browser.env.CREDIT_PACKS
     browser.env.CREDIT_PACKS = undefined
     browser.env.CREDIT_PRICE = undefined
-    await openSettings(user)
+    await openCredits(user)
 
     const buy = within(section('Buy credits'))
     expect(await buy.findByRole('alert')).toHaveTextContent('Buying credits is unavailable right now.')
@@ -134,7 +151,7 @@ describe('buying credits on the settings page', () => {
 
   it('says when Checkout cannot be opened, and opens no tab', async () => {
     const { browser, user } = await openPanel()
-    await openSettings(user)
+    await openCredits(user)
     browser.stripe.failWith = new Error('Stripe answered 500')
 
     const buy = within(section('Buy credits'))

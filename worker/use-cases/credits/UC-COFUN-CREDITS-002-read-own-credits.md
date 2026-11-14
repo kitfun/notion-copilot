@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user's product reads, for them, their credits (UC-COFUN-CREDITS-001), their usage per day, and the history of the credits they were given, to show them. What each product shows, and how, is in its own use cases (Notico's UC-NOTICO-CHAT-003).
+A signed-in user's product reads, for them, their credits (UC-COFUN-CREDITS-001), their usage per day over the last 30 days, and the history of the credits they were given (with what each purchase cost), to show them. Older usage is not read: no product shows it. What each product shows, and how, is in its own use cases (Notico's UC-NOTICO-CHAT-003).
 
 Key constraint:
 

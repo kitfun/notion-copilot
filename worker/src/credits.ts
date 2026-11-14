@@ -89,7 +89,6 @@ const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() }
 const UsageRow = z
   .object({ day: z.int(), micro_credits: z.int().min(0) })
   .transform((row) => ({ day: row.day, microCredits: row.micro_credits }))
-const LastCallRow = z.object({ at: z.int().nullable() })
 const CountRow = z.object({ n: z.int().min(0) })
 
 /** The one row a statement returns, checked against `schema`. */
@@ -105,15 +104,10 @@ export interface Balance {
   nextGrantAt: number
 }
 
-/**
- * Which days to total a user's spending over: `days` days of a clock `offsetMs` ahead of UTC. They
- * end with today, or with the day before `before` (a day counted from 1970-01-01 on that clock) to
- * look further back.
- */
+/** Which days to total a user's spending over: the last `days` days, today included, of a clock `offsetMs` ahead of UTC. */
 export interface UsagePeriod {
   days: number
   offsetMs: number
-  before?: number
 }
 
 /** What a user's model calls cost on one day. `day` counts days since 1970-01-01 on the period's clock. */
@@ -123,25 +117,13 @@ interface DayUsage {
 }
 
 /**
- * The days of a period, and the moments they span. The one definition of a user's own day: a moment
- * belongs to the day `floor((moment + offsetMs) / a day)`, here and in READ_USAGE.
+ * The moments a period spans. The one definition of a user's own day: a moment belongs to the day
+ * `floor((moment + offsetMs) / a day)`, here and in READ_USAGE.
  */
-function daysOf(now: number, { days, offsetMs, before }: UsagePeriod) {
-  const dayOf = (at: number) => Math.floor((at + offsetMs) / DAY_MS)
-  const last = before === undefined ? dayOf(now) : before - 1
+function spanOf(now: number, { days, offsetMs }: UsagePeriod) {
+  const last = Math.floor((now + offsetMs) / DAY_MS)
   const first = last - (days - 1)
-  return { first, last, from: first * DAY_MS - offsetMs, to: (last + 1) * DAY_MS - offsetMs, dayOf }
-}
-
-/** A user's spending over one period, and where to look for what came before it. */
-interface UsageHistory {
-  /** The first and last day of the period, both counted in full. */
-  first: number
-  last: number
-  /** What the calls cost per day, newest first; days that cost nothing are left out. */
-  usage: DayUsage[]
-  /** The day after the user's latest call before the period: the `before` of the period to read next. Absent when there is no earlier call. */
-  earlier?: number
+  return { from: first * DAY_MS - offsetMs, to: (last + 1) * DAY_MS - offsetMs }
 }
 
 /** Where a page of a user's grants starts: the grants given at `at` or before, without the `skip` newest of them, which an earlier page showed. */
@@ -324,13 +306,6 @@ FROM model_calls WHERE user_id = ?1 AND started_at >= ?2 AND started_at < ?3
 GROUP BY day HAVING sum(micro_credits) > 0 ORDER BY day DESC`
 
 /**
- * When the user's latest call before ?2 started, or null: one step into the `model_calls_by_user`
- * index. Calls that cost nothing count too: leaving them out would mean reading back through every
- * one of them, so a period found this way can turn out to have cost nothing.
- */
-const READ_LAST_CALL_BEFORE = `SELECT max(started_at) AS at FROM model_calls WHERE user_id = ?1 AND started_at < ?2`
-
-/**
  * One page of the user's grants, newest first: those given at ?2 or before, without the first ?3
  * of them, and one more than a page holds, to tell whether more follow. The
  * `grants_by_user_granted` index gives them in this order, so a page reads only its own rows. The
@@ -403,7 +378,7 @@ export class Ledger {
    * weekly free grant, so it does not start the user's week.
    */
   async look(now: number, period: UsagePeriod): Promise<Standing> {
-    const { from, to } = daysOf(now, period)
+    const { from, to } = spanOf(now, period)
     const [balanceRow, grantRows, usageRows] = await this.db.batch([
       this.statement(READ_BALANCE, now, FREE_GRANT),
       this.statement(READ_CURRENT_GRANTS, now),
@@ -418,25 +393,6 @@ export class Ledger {
       free: until === null ? { started: false, toCome: balance - left } : { started: true, until },
       grants,
       usage: z.array(UsageRow).parse(usageRows?.results ?? []),
-    }
-  }
-
-  /**
-   * What the user's model calls cost per day over `period`, and where their usage before it is.
-   * Reading changes nothing.
-   */
-  async usage(now: number, period: UsagePeriod): Promise<UsageHistory> {
-    const { first, last, from, to, dayOf } = daysOf(now, period)
-    const [usageRows, lastCallRow] = await this.db.batch([
-      this.statement(READ_USAGE, from, to, period.offsetMs),
-      this.statement(READ_LAST_CALL_BEFORE, from),
-    ])
-    const { at } = only(LastCallRow, lastCallRow)
-    return {
-      first,
-      last,
-      usage: z.array(UsageRow).parse(usageRows?.results ?? []),
-      ...(at === null ? {} : { earlier: dayOf(at) + 1 }),
     }
   }
 

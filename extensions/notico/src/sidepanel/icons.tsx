@@ -31,6 +31,22 @@ const SHAPES = {
   ),
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
   chevron: <path d="M4.5 10l3.5-3.5 3.5 3.5" />,
+  /** Leads on to another page. */
+  forward: <path d="M6 3.5L10.5 8 6 12.5" />,
+  /** A stack of coins: credits. */
+  coins: (
+    <>
+      <ellipse cx="8" cy="5" rx="5" ry="2.2" />
+      <path d="M3 5v3c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2V5M3 8v3c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2V8" />
+    </>
+  ),
+  gear: (
+    <>
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
+    </>
+  ),
+  signOut: <path d="M6.5 13.5h-3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3M10 11l3-3-3-3M13 8H6" />,
   close: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
   /** An arrow down into a tray: save to Notion. */
   save: <path d="M8 2.5v7M5 6.5l3 3 3-3M2.5 10v2A1.5 1.5 0 0 0 4 13.5h8A1.5 1.5 0 0 0 13.5 12v-2" />,

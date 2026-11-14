@@ -46,7 +46,7 @@
 
 There is nothing to connect on the Notion side: no integration to create, no token to paste.
 
-**Credits.** Asking the AI with Notico's own model costs credits (answering with your own model on OpenRouter or DeepSeek spends none), and every account gets 200 free credits each week. When you need more, buy a pack on the Settings page: it opens Stripe's checkout in a new tab, nothing renews, and the credits last a year. Back in the side panel, they show as soon as the payment goes through. Your avatar at the top of the panel shows how many are left and when they expire; its Settings page also shows how many you used each day, and leads to the history of your credits: every lot you were given and what you used further back.
+**Credits.** Asking the AI with Notico's own model costs credits (answering with your own model on OpenRouter or DeepSeek spends none), and every account gets 200 free credits each week. Your avatar at the top of the panel shows how many are left; its Credits page shows where they came from, how many you used on each of the last 30 days, and the history of your credits: every lot you were given, and what you paid for those you bought. When you need more, buy a pack on the Credits page: it opens Stripe's checkout in a new tab, nothing renews, and the credits last a year. Back in the side panel, they show as soon as the payment goes through.
 
 **What's new.** The [changelog](CHANGELOG.md) lists what changed in each version.
 

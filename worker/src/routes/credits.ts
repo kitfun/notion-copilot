@@ -1,8 +1,9 @@
-// The signed-in user's own credits, for the side panel (/v1/credits…): what is left, and their history.
+// The signed-in user's own credits, for the side panel (/v1/credits…): what is left, and the grants they were given.
 import { Hono } from 'hono'
 import * as z from '../zod'
-import { FREE_PERIOD_MS, Ledger, type GrantsCursor, type Standing } from '../credits'
-import { CalendarDate, DAY_MS, HttpError, errorSummary, parse, part, type App, type Ctx, type Deps } from '../http'
+import { CREDITS_PER_UNIT } from '../billing'
+import { FREE_PERIOD_MS, Ledger, MICRO_CREDITS, type GrantsCursor, type Standing } from '../credits'
+import { DAY_MS, HttpError, errorSummary, parse, part, type App, type Ctx, type Deps } from '../http'
 
 /** How many recent days of spending a user is shown, today included. */
 const USAGE_DAYS = 30
@@ -26,12 +27,6 @@ const UtcOffset = part(
 /** A day counted from 1970-01-01, as a date: YYYY-MM-DD. */
 const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10)
 
-/** The day a period of usage ends before, as the side panel sends it: a date, as a day counted from 1970-01-01. */
-const UsageBefore = part(
-  CalendarDate.transform((ms) => ms / DAY_MS).optional(),
-  'before must be a date like 2026-11-12',
-)
-
 /**
  * Where a page of grants starts, as the page before it gave it in `next`: a time in ms, and how
  * many grants of that millisecond were shown already. Both bounded, so the query is.
@@ -48,6 +43,13 @@ const GrantsBefore = part(
   'before must be the next of an earlier page',
 )
 const cursorText = ({ at, skip }: GrantsCursor) => `${at}.${skip}`
+
+/**
+ * What a purchase of `amount` micro-credits cost, in US cents: its list price, at 1000 credits a
+ * dollar, which is what a purchase's credits are worked out from (see billing.ts). Checkout may
+ * have charged it in the buyer's currency, with tax; the worker does not keep that.
+ */
+const usdCentsOf = (amount: number) => Math.round((amount / MICRO_CREDITS / CREDITS_PER_UNIT) * 100)
 
 /**
  * A user's credits as the side panel shows them. Amounts stay in micro-credits; the panel rounds
@@ -85,11 +87,11 @@ export function creditsRoutes({ now, logError }: Deps): App {
     }
   }
 
-  // The history of the signed-in user's credits, read by the side panel only when the user opens
-  // it, a page at a time, so the read above stays small. Both only read, for the caller only.
-
-  // Every grant the user was given, newest first, the expired ones included, with what is left of
-  // each (for an expired one: what went unspent). Never the admin who made a grant by hand.
+  // The history of the signed-in user's credits: every grant they were given, newest first, the
+  // expired ones included, with what is left of each (for an expired one: what went unspent), and
+  // for a purchase what it cost. Never the admin who made a grant by hand. Read by the side panel
+  // only when the user opens it, a page at a time, so the read above stays small. It only reads,
+  // for the caller only.
   routes.get('/grants', async (c) => {
     const from = parse(GrantsBefore, c.req.query('before'))
     const { grants, next } = await onOwnLedger(c, (ledger) => ledger.grantsPage(from))
@@ -100,26 +102,11 @@ export function creditsRoutes({ now, logError }: Deps): App {
         left,
         grantedAt,
         expiresAt,
+        ...(source === 'purchase' ? { usdCents: usdCentsOf(amount) } : {}),
         // A purchase taken back ended at `expiresAt`, and `left` is what was taken back.
         ...(revoked ? { revoked } : {}),
       })),
       next: next ? cursorText(next) : null,
-    })
-  })
-
-  // Credits used per day over one period as long as the one /v1/credits reports, by the same days:
-  // the most recent one, or the one that ends before `before`. `earlier` is the `before` that
-  // leads to the user's usage before this period, skipping the days they made no call.
-  routes.get('/usage', async (c) => {
-    const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
-    const before = parse(UsageBefore, c.req.query('before'))
-    const period = { days: USAGE_DAYS, offsetMs, ...(before === undefined ? {} : { before }) }
-    const { first, last, usage, earlier } = await onOwnLedger(c, (ledger) => ledger.usage(now().getTime(), period))
-    return c.json({
-      from: dateOf(first),
-      to: dateOf(last),
-      byDay: usage.map(({ day, microCredits }) => ({ day: dateOf(day), microCredits })),
-      earlier: earlier === undefined ? null : dateOf(earlier),
     })
   })
 

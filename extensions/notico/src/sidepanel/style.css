@@ -1480,21 +1480,20 @@ a.icon-button {
   box-shadow: 0 8px 28px var(--shadow);
 }
 
-.account-who,
-.account-balance {
-  padding: 8px 10px;
+.account-who {
+  padding: 8px 10px 10px;
   overflow-wrap: anywhere;
 }
 
-.account-balance {
-  margin-bottom: 6px;
-  border-radius: 12px;
-  background: var(--tint);
+.account-name {
+  font-weight: 600;
 }
 
-.account-name,
-.account-credits {
-  font-weight: 600;
+.account-popover hr {
+  height: 1px;
+  margin: 4px 6px;
+  border: none;
+  background: var(--border);
 }
 
 .account-detail {
@@ -1503,11 +1502,23 @@ a.icon-button {
 }
 
 .account-popover [role='menuitem'] {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border-radius: 10px;
   text-align: left;
+}
+
+.account-popover [role='menuitem'] .icon,
+.account-popover [role='menuitem'].quiet {
+  color: var(--muted);
+}
+
+.menu-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .account-popover [role='menuitem']:hover,
@@ -1522,54 +1533,95 @@ button.link {
   text-decoration: underline;
 }
 
-/* The settings page: over the chat, which stays as it is underneath */
+/* The Credits and Settings pages: over the whole panel, the chat's header included, which stays as
+   it is underneath. Flat sections split by one line, with no cards. */
 
 .page-layer {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 3;
   overflow-y: auto;
   background: var(--bg);
 }
 
-#settings {
+.page header {
+  padding-left: 8px;
+  gap: 4px;
+}
+
+.page header .title {
+  font-weight: 600;
+}
+
+.page-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 4px 12px 16px;
 }
 
-#settings .sheet-head {
-  justify-content: flex-start;
-  gap: 10px;
-}
-
+/* A section of a page. The Model section (Model.tsx) is a .card, drawn the same way. */
+.page-section,
 .card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  gap: 6px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
 }
 
+.page-section:first-child,
+.card:first-child {
+  border-top: none;
+}
+
+.page-section h2,
 .card h3 {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
-.card [role='alert'] {
+.page-section [role='alert'],
+.card [role='alert'],
+.history [role='alert'] {
   color: var(--error);
 }
 
+.page-section button.primary,
 .card button.primary {
   margin-top: 4px;
 }
 
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A quiet button beside text: Sign out on the Settings page, Buy on a pack. */
+button.secondary,
+.pack-buy {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--tint);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+button.secondary:hover,
+.pack-buy:hover:not(:disabled),
+button.secondary:focus-visible,
+.pack-buy:focus-visible {
+  background: var(--selected);
+  color: var(--accent-text);
+}
+
+.pack-buy:disabled {
+  opacity: 0.6;
+}
+
 .settings-account {
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1582,92 +1634,197 @@ button.link {
   letter-spacing: -0.01em;
 }
 
-.grants {
+.balance-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-lines {
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 6px 0;
+  gap: 4px;
+  margin: 0;
   padding: 0;
   list-style: none;
+  font-size: 13px;
 }
 
-.grants li {
+.balance-lines li {
   display: flex;
-  flex-direction: column;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: var(--tint);
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.balance-lines .account-detail {
+  font-size: inherit;
+  text-align: right;
+}
+
+/* A row that leads to another page: Credit history ›. */
+.row-link {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 6px 0 0;
+  text-align: left;
+}
+
+.row-link .icon {
+  color: var(--muted);
+}
+
+.row-link:hover .grow,
+.row-link:focus-visible .grow {
+  color: var(--accent-text);
 }
 
 .packs {
   align-self: stretch;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 6px;
-  margin: 6px 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-button.pack {
+.packs li {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: var(--tint);
-  color: var(--fg);
-  font-weight: 600;
-  text-align: left;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
 }
 
-button.pack:hover:not(:disabled),
-button.pack:focus-visible {
+.packs li:first-child {
+  border-top: none;
+}
+
+.packs li .grow {
+  font-weight: 500;
+}
+
+.packs li .account-detail {
+  width: 56px;
+  text-align: right;
+  font-size: inherit;
+}
+
+.fine {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* The usage chart: one bar a day, the latest on the right. */
+.usage-chart {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-sum,
+.usage-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.usage-axis {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.usage-bars {
+  height: 56px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.usage-bars:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.usage-bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
   background: var(--selected);
 }
 
-button.pack:disabled {
-  opacity: 0.6;
+.usage-bar.used {
+  background: var(--accent);
 }
 
-.usage {
+.usage-bar.picked {
+  min-height: 4px;
+  background: var(--accent-text);
+}
+
+/* The credit history, in place of the Credits page */
+
+.history {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 16px 14px;
+}
+
+.history-list {
   align-self: stretch;
-  border-collapse: collapse;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.usage caption {
-  padding-bottom: 4px;
-  color: var(--muted);
-  font-size: 12.5px;
-  text-align: left;
-}
-
-.usage th,
-.usage td {
-  padding: 5px 0;
+.history-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
   border-top: 1px solid var(--border);
-  font-weight: 400;
-  text-align: left;
 }
 
-.usage td {
+.history-list li:first-child {
+  border-top: none;
+}
+
+.history-list .grow,
+.history-amount {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-title {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.history-amount {
+  align-items: flex-end;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* The credit history, in place of the settings page: its lists look like the page's own */
-
-.history-grant {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+.history-plus {
+  font-weight: 600;
 }
 
-.history-grant :last-child {
-  flex: none;
-  font-variant-numeric: tabular-nums;
+.history-plus.muted {
+  color: var(--muted);
+}
+
+.taken {
+  color: var(--error);
 }
 
 /* Reads on in a list: a quiet pill, not the one thing to press. */
@@ -1689,7 +1846,7 @@ button.pack:disabled {
   }
 }
 
-/* The settings page's Model section */
+/* The Settings page's Model section */
 
 .model-choice,
 .model-list {
