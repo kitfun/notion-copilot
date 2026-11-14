@@ -202,6 +202,8 @@ smoke/                    pnpm smoke: loads the built extension into Chromium an
 docs/
   architecture.md         this file
   development.md          setup, deployment, and repository settings
+  security.md             the security review: findings by area, their status, and the rules later
+                          changes are checked against
   assets/                 pictures used by Notico's README.md
   bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
 .oxlintrc.json            lint rules, including the extensions' module boundaries

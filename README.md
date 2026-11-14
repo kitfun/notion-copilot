@@ -36,6 +36,7 @@ This repository holds every extension, one folder each in [`extensions/`](extens
 
 - [Architecture](docs/architecture.md): how it is built, the technical choices and why, the sign-in flow, and the code layout.
 - [Development](docs/development.md): build and load an extension, run the checks, and deploy your own worker.
+- [Security review](docs/security.md): where the path from a question to Notion and the worker is weak, what limits it, and what is planned.
 - [AGENTS.md](AGENTS.md): the issue → PR → review → merge workflow and coding rules.
 - [BDD](docs/bdd.md) and the use cases ([Notico's](extensions/notico/use-cases), [the worker's](worker/use-cases)): the product behavior contract, per extension, and how it is tested.
 
